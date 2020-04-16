@@ -47,7 +47,7 @@ def setup(args = None):
                                           )
 
         trainloader = torch.utils.data.DataLoader(labeled_trainset,
-                                                  batch_size=8,
+                                                  batch_size=args.batch_size,
                                                   shuffle=True,
                                                   num_workers=2,
                                                   collate_fn=collate_fn2)
@@ -60,7 +60,7 @@ def setup(args = None):
                                           )
 
         valloader = torch.utils.data.DataLoader(labeled_valset,
-                                                  batch_size=8,
+                                                  batch_size=args.batch_size,
                                                   shuffle=True,
                                                   num_workers=2,
                                                   collate_fn=collate_fn2)
@@ -76,7 +76,7 @@ def setup(args = None):
                                           )
 
         trainloader = torch.utils.data.DataLoader(labeled_trainset,
-                                                  batch_size=8,
+                                                  batch_size=args.batch_size,
                                                   shuffle=True,
                                                   num_workers=2,
                                                   collate_fn=collate_fn2)
@@ -89,7 +89,7 @@ def setup(args = None):
                                         )
 
         valloader = torch.utils.data.DataLoader(labeled_valset,
-                                                batch_size=8,
+                                                batch_size=args.batch_size,
                                                 shuffle=True,
                                                 num_workers=2,
                                                 collate_fn=collate_fn2)
