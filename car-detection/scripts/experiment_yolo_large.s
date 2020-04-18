@@ -8,5 +8,5 @@
 module purge
 source /scratch/bz1030/capstone_env/bin/activate
 cd ..
-python main.py -mc ./config/yolov3_large.cfg -bs 4
+python main.py -mc ./config/yolov3_large.cfg -bs 2
 

@@ -24,6 +24,7 @@ image_names = [
 
 WIDTH_ORIGIN = 306
 HEIGHT_ORIGIN = 256
+RESIZE_DIM = 256 # make sure it's square
 # The dataset class for unlabeled data.
 class UnlabeledDataset(torch.utils.data.Dataset):
     def __init__(self, image_folder, scene_index, first_dim, transform):
@@ -163,7 +164,7 @@ class LabeledDataset(torch.utils.data.Dataset):
             extra['action'] = torch.as_tensor(actions)
             extra['ego_image'] = ego_image
             extra['lane_image'] = lane_image
-
+            extra['file_path'] = sample_path
             return image_tensor, labels, road_image, extra
 
         else:
@@ -195,23 +196,32 @@ class LabeledDatasetLarge(torch.utils.data.Dataset):
         sample_id = index % NUM_SAMPLE_PER_SCENE
         sample_path = os.path.join(self.image_folder, f'scene_{scene_id}', f'sample_{sample_id}')
 
-        total_width = WIDTH_ORIGIN * 3
-        total_height = HEIGHT_ORIGIN * 2
+        total_width = RESIZE_DIM * 3
+        total_height = RESIZE_DIM * 2
         new_img = Image.new('RGB', (total_width, total_height))
         x_offset = 0
         for image_name in image_names[: 3]:
             image_path = os.path.join(sample_path, image_name)
             image = Image.open(image_path)
+            image = image.resize((RESIZE_DIM, RESIZE_DIM))
             new_img.paste(image, (x_offset, 0))
-            x_offset += image.size[0]
+            x_offset += RESIZE_DIM
         x_offset = 0
-        y_offset = HEIGHT_ORIGIN
+        y_offset = RESIZE_DIM
         for image_name in image_names[3:]:
             image_path = os.path.join(sample_path, image_name)
             image = Image.open(image_path)
+            image = image.resize((RESIZE_DIM, RESIZE_DIM))
+            # keep spatial information
+            if 'CAM_BACK.jpeg' == image_name:
+                image = image.rotate(-180)
+            elif 'CAM_BACK_LEFT.jpeg' == image_name:
+                image = image.rotate(180)
+            else:
+                image = image.rotate(-180)
             new_img.paste(image, (x_offset, y_offset))
-            x_offset += image.size[0]
-        # new_img.save('test.jpg')
+            x_offset += RESIZE_DIM
+        new_img.save(f'../foo/{scene_id}_{sample_id}.jpg')
         image_tensor = torch.as_tensor(self.transform(new_img))
         # print(image_tensor.shape)
         data_entries = self.annotation_dataframe[
@@ -247,12 +257,12 @@ class LabeledDatasetLarge(torch.utils.data.Dataset):
         y_center /= 800
         width /= 800
         height /= 800
-        # column order: category, x, y, width, height
+        # column order: category, x, y, width, height; Plan to transpose the label
         labels[:, 1] = categories
-        labels[:, 2] = x_center
-        labels[:, 3] = y_center
-        labels[:, 4] = width
-        labels[:, 5] = height
+        labels[:, 2] = y_center
+        labels[:, 3] = x_center
+        labels[:, 4] = height
+        labels[:, 5] = width
         labels = torch.as_tensor(labels)
         if self.extra_info:
             actions = data_entries.action_id.to_numpy()
@@ -263,6 +273,8 @@ class LabeledDatasetLarge(torch.utils.data.Dataset):
             extra['action'] = torch.as_tensor(actions)
             extra['ego_image'] = ego_image
             extra['lane_image'] = lane_image
+            extra['file_path'] = sample_path
+
 
             return image_tensor, labels, road_image, extra
 
