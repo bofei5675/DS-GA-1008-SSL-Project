@@ -77,9 +77,9 @@ class DataSetWrapper(object):
 
         self.batch_size = batch_size
         self.seq_length = seq_length
-        self.num_workers = 0
-        self.s = 1
-        self.input_shape = (3, 256, 306)
+        self.num_workers = num_workers
+        self.s = s
+        self.input_shape = input_shape
         self.augment = augment
     
     def _pipeline_transform(self):
