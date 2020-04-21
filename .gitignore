@@ -142,3 +142,6 @@ models/__pycache__/
 *.gif
 gym_bs/envs/__pycache__/
 models/__pycache__/
+
+competition/
+ssl/data
