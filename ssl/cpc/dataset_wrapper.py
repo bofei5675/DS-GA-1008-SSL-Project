@@ -10,7 +10,7 @@ from torch.utils.data.sampler import SubsetRandomSampler
 import torchvision.transforms as transforms
 
 class UnlabeledDataset(torch.utils.data.Dataset):
-    def __init__(self, image_folder, seq_length, transform):
+    def __init__(self, image_folder, seq_length, transform, folders=range(126)):
         self.image_folder = image_folder
         
         self.image_names = [
@@ -25,8 +25,9 @@ class UnlabeledDataset(torch.utils.data.Dataset):
         self.transform = transform
         assert seq_length <= 63
         self.seq_length = seq_length
+        self.folders = folders
         
-        self.n_scene = 106
+        self.n_scene = len(folders)
         self.n_sample = 126 - 2*self.seq_length + 1
         self.n_view = 6
     
@@ -35,6 +36,7 @@ class UnlabeledDataset(torch.utils.data.Dataset):
     
     def __getitem__(self, index):
         scene_id = index // (self.n_view * self.n_sample)
+        scene_id = self.folders[scene_id]
         rest = index % (self.n_view * self.n_sample)
         view_id = rest // self.n_sample
         sample_id = rest % self.n_sample
@@ -71,12 +73,13 @@ class GaussianBlur(object):
         return sample
 
 class DataSetWrapper(object):
-    def __init__(self, batch_size, seq_length, num_workers, s,
+    def __init__(self, batch_size, seq_length, num_workers, s, valid_size, 
                  input_shape=(3, 256, 306), image_folder='data', augment=True):
         self.image_folder = image_folder
 
         self.batch_size = batch_size
         self.seq_length = seq_length
+        self.valid_size = valid_size
         self.num_workers = num_workers
         self.s = s
         self.input_shape = input_shape
@@ -100,14 +103,25 @@ class DataSetWrapper(object):
         else:
             data_augment = transforms.Compose([transforms.Resize([416, 416]), transforms.ToTensor()])
 
-        unlabeled_trainset = UnlabeledDataset(self.image_folder, self.seq_length, data_augment)
+        folders = np.arange(126)
+        np.random.shuffle(folders)
+        split = int(np.floor(self.valid_size * 126))
+        train_folders, valid_folders = folders[split:], folders[:split]
+        unlabeled_trainset = UnlabeledDataset(self.image_folder, self.seq_length, data_augment, folders=train_folders)
+        unlabeled_validset = UnlabeledDataset(self.image_folder, self.seq_length, data_augment, folders=valid_folders)
 
         num_train = len(unlabeled_trainset)
-        indices = list(range(num_train))
-        np.random.shuffle(indices)
+        num_valid = len(unlabeled_validset)
+        indices_train = list(range(num_train))
+        indices_valid = list(range(num_valid))
+        np.random.shuffle(indices_train)
+        np.random.shuffle(indices_valid)
 
-        train_sampler = SubsetRandomSampler(indices)
+        train_sampler = SubsetRandomSampler(indices_train)
+        valid_sampler = SubsetRandomSampler(indices_valid)
 
         train_loader = DataLoader(unlabeled_trainset, batch_size=self.batch_size, sampler=train_sampler,
                                   num_workers=self.num_workers, drop_last=True, shuffle=False)
-        return train_loader
+        valid_loader = DataLoader(unlabeled_validset, batch_size=self.batch_size, sampler=valid_sampler,
+                                  num_workers=self.num_workers, drop_last=True)
+        return train_loader, valid_loader
