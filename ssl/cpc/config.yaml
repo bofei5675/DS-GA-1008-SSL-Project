@@ -11,6 +11,7 @@ use_cosine_similarity : True
 weight_decay: 10e-6
 
 batch_size: 4
+valid_size: 0.05
 device : 'cuda:0'
 epochs: 80
 

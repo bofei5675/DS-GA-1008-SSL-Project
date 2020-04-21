@@ -73,13 +73,13 @@ class GaussianBlur(object):
         return sample
 
 class DataSetWrapper(object):
-    def __init__(self, batch_size, seq_length, num_workers, s, valid_size, 
-                 input_shape=(3, 256, 306), image_folder='data', augment=True):
-        self.image_folder = image_folder
+    def __init__(self, args, num_workers, s, 
+                 input_shape=(3, 256, 306), augment=True):
+        self.image_folder = args.data_dir
 
-        self.batch_size = batch_size
-        self.seq_length = seq_length
-        self.valid_size = valid_size
+        self.batch_size = args.batch_size
+        self.seq_length = args.rnn_seq_len
+        self.valid_size = args.valid_size
         self.num_workers = num_workers
         self.s = s
         self.input_shape = input_shape
