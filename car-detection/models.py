@@ -75,9 +75,29 @@ def create_modules(module_defs):
             num_classes = int(module_def["classes"])
             img_size = int(hyperparams["height"])
             # Define detection layer
-            yolo_layer = YOLOLayer(anchors, num_classes, img_size)
+            yolo_layer = YOLOLayer(anchors, num_classes, img_size,
+                                   float(hyperparams['obj_scale']),
+                                   float(hyperparams['nonobj_scale']),
+                                   float(hyperparams['regr_weights']))
             modules.add_module(f"yolo_{module_i}", yolo_layer)
         # Register module list and number of output filters
+        elif module_def['type'] == 'convolutional_mapping':
+            in_channels = int(module_def["in_channels"])
+            out_channels = int(module_def['out_channels'])
+            kernel_size = int(module_def["size"])
+            pad = (kernel_size - 1) // 2
+            bn = int(module_def["batch_normalize"]) == 1
+            modules.add_module(
+                f"mapping_{module_i}",
+                nn.Conv2d(
+                    in_channels=in_channels,
+                    out_channels=out_channels,
+                    kernel_size=kernel_size,
+                    stride=int(module_def["stride"]),
+                    padding=pad,
+                    bias=not bn,
+                ),
+            )
         module_list.append(modules)
         output_filters.append(filters)
 
@@ -107,16 +127,17 @@ class EmptyLayer(nn.Module):
 class YOLOLayer(nn.Module):
     """Detection layer"""
 
-    def __init__(self, anchors, num_classes, img_dim=416):
+    def __init__(self, anchors, num_classes, img_dim=416, obj_scale=1, nonobj_scale=1, regr_weights=10):
         super(YOLOLayer, self).__init__()
         self.anchors = anchors
         self.num_anchors = len(anchors)
         self.num_classes = num_classes
         self.ignore_thres = 0.5
-        self.mse_loss = nn.MSELoss()
+        self.mse_loss = nn.SmoothL1Loss()
         self.bce_loss = nn.BCELoss()
-        self.obj_scale = 1
-        self.noobj_scale = 100
+        self.obj_scale = obj_scale
+        self.noobj_scale = nonobj_scale
+        self.regr_weights = regr_weights
         self.metrics = {}
         self.img_dim = img_dim
         self.grid_size = 0  # grid size
@@ -144,7 +165,7 @@ class YOLOLayer(nn.Module):
         grid_size1 = x.size(2)
         grid_size2 = x.size(3)
         prediction = (
-            x.view(num_samples, self.num_anchors, self.num_classes + 5, grid_size1, grid_size2)
+            x.view(num_samples, self.num_anchors, self.num_classes + 7, grid_size1, grid_size2)
             .permute(0, 1, 3, 4, 2)
             .contiguous()
         )
@@ -157,22 +178,27 @@ class YOLOLayer(nn.Module):
         w = prediction[..., 2]  # Width
         h = prediction[..., 3]  # Height
         pred_conf = torch.sigmoid(prediction[..., 4])  # Conf
-        pred_cls = torch.sigmoid(prediction[..., 5:])  # Cls pred.
+        pred_rotation = torch.tanh(prediction[..., 5: 7])# pred rotation
+        xdir = pred_rotation[..., 0]
+        ydir = pred_rotation[..., 1]
+        pred_cls = torch.sigmoid(prediction[..., 7:])  # Cls pred.
 
         # If grid size does not match current we compute new offsets
         if grid_size1 != self.grid_size:
             self.compute_grid_offsets(grid_size1, cuda=x.is_cuda)
 
         # Add offset and scale with anchors
-        pred_boxes = FloatTensor(prediction[..., :4].shape)
+        pred_boxes = FloatTensor(prediction[..., :6].shape)
         pred_boxes[..., 0] = x.data + self.grid_x
         pred_boxes[..., 1] = y.data + self.grid_y
         pred_boxes[..., 2] = torch.exp(w.data) * self.anchor_w
         pred_boxes[..., 3] = torch.exp(h.data) * self.anchor_h
+        pred_boxes[..., 4:] = pred_rotation
         #print('pred boxes',pred_boxes.shape)
+        pred_boxes[..., :4] = pred_boxes[..., :4] * self.stride
         output = torch.cat(
             (
-                pred_boxes.view(num_samples, -1, 4) * self.stride,
+                pred_boxes.view(num_samples, -1, 6),
                 pred_conf.view(num_samples, -1, 1),
                 pred_cls.view(num_samples, -1, self.num_classes),
             ),
@@ -182,55 +208,90 @@ class YOLOLayer(nn.Module):
         if targets is None:
             return output, 0
         else:
-            iou_scores, class_mask, obj_mask, noobj_mask, tx, ty, tw, th, tcls, tconf = build_targets(
-                pred_boxes=pred_boxes,
-                pred_cls=pred_cls,
-                target=targets,
-                anchors=self.scaled_anchors,
-                ignore_thres=self.ignore_thres,
-            )
+            loss, metrics = yolo_loss(x, y, w, h, xdir, ydir, pred_boxes, pred_conf, pred_cls, targets,
+                                            self.scaled_anchors,
+                                            self.ignore_thres,
+                                            self.bce_loss,
+                                            self.mse_loss,
+                                            self.obj_scale,
+                                            self.noobj_scale,
+                                            self.regr_weights,
+                                            grid_size1)
 
-            # Loss : Mask outputs to ignore non-existing objects (except with conf. loss)
-            loss_x = self.mse_loss(x[obj_mask], tx[obj_mask])
-            loss_y = self.mse_loss(y[obj_mask], ty[obj_mask])
-            loss_w = self.mse_loss(w[obj_mask], tw[obj_mask])
-            loss_h = self.mse_loss(h[obj_mask], th[obj_mask])
-            loss_conf_obj = self.bce_loss(pred_conf[obj_mask], tconf[obj_mask])
-            loss_conf_noobj = self.bce_loss(pred_conf[noobj_mask], tconf[noobj_mask])
-            loss_conf = self.obj_scale * loss_conf_obj + self.noobj_scale * loss_conf_noobj
-            loss_cls = self.bce_loss(pred_cls[obj_mask], tcls[obj_mask])
-            total_loss = loss_x + loss_y + loss_w + loss_h + loss_conf + loss_cls
+            return output, loss, metrics
 
-            # Metrics
-            cls_acc = 100 * class_mask[obj_mask].mean()
-            conf_obj = pred_conf[obj_mask].mean()
-            conf_noobj = pred_conf[noobj_mask].mean()
-            conf50 = (pred_conf > 0.5).float()
-            iou50 = (iou_scores > 0.5).float()
-            iou75 = (iou_scores > 0.75).float()
-            detected_mask = conf50 * class_mask * tconf
-            precision = torch.sum(iou50 * detected_mask) / (conf50.sum() + 1e-16)
-            recall50 = torch.sum(iou50 * detected_mask) / (obj_mask.sum() + 1e-16)
-            recall75 = torch.sum(iou75 * detected_mask) / (obj_mask.sum() + 1e-16)
 
-            self.metrics = {
-                "loss": to_cpu(total_loss).item(),
-                "x": to_cpu(loss_x).item(),
-                "y": to_cpu(loss_y).item(),
-                "w": to_cpu(loss_w).item(),
-                "h": to_cpu(loss_h).item(),
-                "conf": to_cpu(loss_conf).item(),
-                "cls": to_cpu(loss_cls).item(),
-                "cls_acc": to_cpu(cls_acc).item(),
-                "recall50": to_cpu(recall50).item(),
-                "recall75": to_cpu(recall75).item(),
-                "precision": to_cpu(precision).item(),
-                "conf_obj": to_cpu(conf_obj).item(),
-                "conf_noobj": to_cpu(conf_noobj).item(),
-                "grid_size": grid_size1,
-            }
+def bce_loss(pred_conf, tconf, weights=(1,1),reduction='mean'):
+    loss = weights[1] * tconf * -torch.log(pred_conf + 1e-8) +  weights[0] * (1 - tconf) * -torch.log(1-pred_conf + 1e-8)
+    loss = loss.sum(dim=0)
+    if reduction == 'mean':
+        return loss.mean()
+    return loss.sum()
 
-            return output, total_loss
+def focal_loss(pred_conf, tconf, weights=(1,1), alpha=1, reduction='mean'):
+    focal_weights = [(pred_conf) ** alpha, (1 - pred_conf) ** alpha]
+    loss = weights[1] * tconf *  focal_weights[1] *- torch.log(pred_conf + 1e-8) +\
+           weights[0] * focal_weights[0] *(1 - tconf) * -torch.log(1-pred_conf + 1e-8)
+    loss = loss.sum(dim=0)
+    if reduction == 'mean':
+        return loss.mean()
+    return loss.sum()
+
+def yolo_loss(x, y, w, h, xdir, ydir, pred_boxes, pred_conf, pred_cls, targets, scaled_anchors, ignore_thres,
+            clf_criterion, reg_criterion, obj_scale, noobj_scale, regr_weights, grid_size1):
+    iou_scores, class_mask, obj_mask, noobj_mask, tx, ty, tw, th, txdir, tydir, tcls, tconf = build_targets(
+        pred_boxes=pred_boxes,
+        pred_cls=pred_cls,
+        target=targets,
+        anchors=scaled_anchors,
+        ignore_thres=ignore_thres,
+    )
+
+    # Loss : Mask outputs to ignore non-existing objects (except with conf. loss)
+    loss_x = reg_criterion(x[obj_mask], tx[obj_mask])
+    loss_y = reg_criterion(y[obj_mask], ty[obj_mask])
+    loss_w = reg_criterion(w[obj_mask], tw[obj_mask])
+    loss_h = reg_criterion(h[obj_mask], th[obj_mask])
+    # Loss: rotations
+    loss_xdir = reg_criterion(xdir[obj_mask], txdir[obj_mask])
+    loss_ydir = reg_criterion(ydir[obj_mask], tydir[obj_mask])
+    weights = (noobj_scale, obj_scale)
+    loss_conf = bce_loss(pred_conf, tconf, weights)
+    #print(obj_scale, '*', loss_conf_obj, '+', noobj_scale, '*', loss_conf_noobj )
+    loss_cls = clf_criterion(pred_cls[obj_mask], tcls[obj_mask])
+    total_loss = regr_weights * (loss_x + loss_y + loss_w + loss_h + loss_xdir + loss_ydir) +\
+                 loss_conf + loss_cls
+
+    # Metrics
+    cls_acc = 100 * class_mask[obj_mask].mean()
+    conf_obj = pred_conf[obj_mask].mean()
+    conf_noobj = pred_conf[noobj_mask].mean()
+    conf50 = (pred_conf > 0.5).float()
+    iou50 = (iou_scores > 0.5).float()
+    iou75 = (iou_scores > 0.75).float()
+    detected_mask = conf50 * class_mask * tconf
+    precision = torch.sum(iou50 * detected_mask) / (conf50.sum() + 1e-16)
+    recall50 = torch.sum(iou50 * detected_mask) / (obj_mask.sum() + 1e-16)
+    recall75 = torch.sum(iou75 * detected_mask) / (obj_mask.sum() + 1e-16)
+
+    metrics = {
+        "loss": to_cpu(total_loss).item(),
+        "x": to_cpu(loss_x).item(),
+        "y": to_cpu(loss_y).item(),
+        "w": to_cpu(loss_w).item(),
+        "h": to_cpu(loss_h).item(),
+        "conf": to_cpu(loss_conf).item(),
+        "cls": to_cpu(loss_cls).item(),
+        "cls_acc": to_cpu(cls_acc).item(),
+        "recall50": to_cpu(recall50).item(),
+        "recall75": to_cpu(recall75).item(),
+        "precision": to_cpu(precision).item(),
+        "conf_obj": to_cpu(conf_obj).item(),
+        "conf_noobj": to_cpu(conf_noobj).item(),
+        "grid_size": grid_size1,
+        'rotation': to_cpu(loss_xdir + loss_ydir).item()
+    }
+    return total_loss, metrics
 
 
 class Darknet(nn.Module):
@@ -251,22 +312,20 @@ class Darknet(nn.Module):
         layer_outputs, yolo_outputs = [], []
         metrics = {}
         for i, (module_def, module) in enumerate(zip(self.module_defs, self.module_list)):
+            #print(module_def['type'], x.shape)
             if module_def["type"] in ["convolutional", "upsample", "maxpool"]:
                 x = module(x)
             elif module_def["type"] == "route":
+                #for out in [layer_outputs[int(layer_i)] for layer_i in module_def["layers"].split(",")]:
+                    #print(out.shape)
                 x = torch.cat([layer_outputs[int(layer_i)] for layer_i in module_def["layers"].split(",")], 1)
             elif module_def["type"] == "shortcut":
                 layer_i = int(module_def["from"])
                 x = layer_outputs[-1] + layer_outputs[layer_i]
             elif module_def["type"] == "yolo":
-                x, layer_loss = module[0](x, targets, img_dim)
-                loss += layer_loss
                 yolo_outputs.append(x)
-                scale = x.shape[-1]
-                metrics['{},{}'.format(str(scale), str(scale))] = module[0].metrics
             layer_outputs.append(x)
-        yolo_outputs = to_cpu(torch.cat(yolo_outputs, 1))
-        return loss, yolo_outputs, metrics
+        return yolo_outputs
         # return x
 
     def load_darknet_weights(self, weights_path):
@@ -288,9 +347,9 @@ class Darknet(nn.Module):
         for i, (module_def, module) in enumerate(zip(self.module_defs, self.module_list)):
             if i == cutoff:
                 break
-            if module_def["type"] == "convolutional":
+            if module_def["type"] == "convolutional" or module_def["type"] == "convolutional_mapping":
                 conv_layer = module[0]
-                if module_def["batch_normalize"]:
+                if int(module_def["batch_normalize"]) == 1:
                     # Load BN bias, weights, running mean and running variance
                     bn_layer = module[1]
                     num_b = bn_layer.bias.numel()  # Number of biases
@@ -333,10 +392,10 @@ class Darknet(nn.Module):
 
         # Iterate through layers
         for i, (module_def, module) in enumerate(zip(self.module_defs[:cutoff], self.module_list[:cutoff])):
-            if module_def["type"] == "convolutional":
+            if module_def["type"] == "convolutional" or module_def["type"] == "convolutional_mapping":
                 conv_layer = module[0]
                 # If batch norm, load bn first
-                if module_def["batch_normalize"]:
+                if int(module_def["batch_normalize"]) == 1:
                     bn_layer = module[1]
                     bn_layer.bias.data.cpu().numpy().tofile(fp)
                     bn_layer.weight.data.cpu().numpy().tofile(fp)
