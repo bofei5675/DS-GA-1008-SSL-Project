@@ -132,26 +132,17 @@ def train_yolov3_pass_6(model, optimizer, trainloader, valloader, args):
                 target = target.to(device)
                 with torch.set_grad_enabled(phase == 'train'):
                     outputs = {0: None, 1:None, 2: None}
+                    # 这里要把6张图依次PASS， 保存他们的FEATURE MAP然后合成一张
+                    # 怎么合成： 1） 一个1X1 CONV2D？ 2）直接加一起？
+                    outputs = []
                     for image_idx in range(6):
                         image  = sample[:, image_idx].squeeze()
-                        yolo_output = model(image)
-
-                        for output_idx in range(3):
-                            if outputs[output_idx] is None:
-                                outputs[output_idx] = yolo_output[output_idx]
-                            else:
-                                outputs[output_idx] = torch.cat((outputs[output_idx],
-                                                                yolo_output[output_idx]),
-                                                                dim=1)
+                        output = model(image)
+                        outputs.append(output)
+                    # combine outputs
+                    outputs = torch.sum(outputs) or model.one_by_one_conv(torch.stack(outputs))
                     # compute loss
-                    loss = 0
-                    for output_idx in range(3):
-                        output = outputs[output_idx]
-                        output = model.module_list[-3 + output_idx](output)
-                        output, layer_loss, metrics = yolo[output_idx](output, target, 416)
-                        for key in metrics_epoch:
-                            metrics_epoch[key] += metrics[key]
-                        loss += layer_loss
+                    loss = pixel_wise_bce(outputs, road_image)
                     if args.demo:
                         output = '{}/{}:' \
                             .format(idx + 1, num_batch)

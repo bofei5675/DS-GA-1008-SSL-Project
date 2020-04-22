@@ -1,6 +1,8 @@
 import argparse
 from train import setup, train_yolov3, train_yolov3_pass_6
 import torch
+
+# 应该不用改
 def str2bool(v):
     if isinstance(v, bool):
        return v
