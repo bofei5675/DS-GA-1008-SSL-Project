@@ -109,51 +109,29 @@ class LabeledDataset(torch.utils.data.Dataset):
         scene_id = self.scene_index[index // NUM_SAMPLE_PER_SCENE]
         sample_id = index % NUM_SAMPLE_PER_SCENE
         sample_path = os.path.join(self.image_folder, f'scene_{scene_id}', f'sample_{sample_id}')
-
         images = []
         for image_name in image_names:
             image_path = os.path.join(sample_path, image_name)
             image = Image.open(image_path)
-            images.append(self.transform(image))
+            image = self.transform(image)
+            image = image.unsqueeze(0)
+            images.append(image)
         image_tensor = torch.cat(images, dim=0)
         data_entries = self.annotation_dataframe[
-            (self.annotation_dataframe['scene'] == scene_id) & (self.annotation_dataframe['sample'] == sample_id)]
-        corners = data_entries[['fl_x', 'fr_x', 'bl_x', 'br_x', 'fl_y', 'fr_y', 'bl_y', 'br_y']].to_numpy()
-        categories = data_entries.category_id.to_numpy()
+            (self.annotation_dataframe['scene'] == scene_id) & (
+                    self.annotation_dataframe['sample'] == sample_id)]
+        corners = data_entries[['fl_x', 'fr_x', 'bl_x', 'br_x', 'fl_y', 'fr_y', 'bl_y', 'br_y']] \
+            .to_numpy().reshape(-1, 2, 4)
+        labels = self.build_labels(corners)
 
+        categories = data_entries.category_id.to_numpy()
         ego_path = os.path.join(sample_path, 'ego.png')
         ego_image = Image.open(ego_path)
         ego_image = torchvision.transforms.functional.to_tensor(ego_image)
         road_image = convert_map_to_road_map(ego_image)
-
-        bounding_box = corners.reshape((-1, 2, 4))
-        # convert to the grid final 800 x 800 grid
-        bounding_box = bounding_box * 10 + 400
-        num_bbs = bounding_box.shape[0]
-        # leave the first column as an identifier
-        labels = np.zeros((num_bbs, 5 + 1))
-        # compute width by (x_fl, y_fl) - (x_fr, y_fr)
-        width = (bounding_box[:, 0, 0] - bounding_box[:, 0, 1]) ** 2 + \
-                (bounding_box[:, 1, 0] - bounding_box[:, 1, 1]) ** 2
-        width = np.sqrt(width)
-        # compute height in a same way
-        height = (bounding_box[:, 0, 1] - bounding_box[:, 0, 3]) ** 2 + \
-                (bounding_box[:, 1, 1] - bounding_box[:, 1, 3]) ** 2
-        height = np.sqrt(height)
-        # get x center
-        x_center = (bounding_box[:, 0, 0] + bounding_box[:, 0, 1]) / 2
-        y_center = (bounding_box[:, 1, 0] + bounding_box[:, 1, 1]) / 2
-        # normalize by 800
-        x_center /= 800
-        y_center /= 800
-        width /= 800
-        height /= 800
-        # column order: category, x, y, width, height
         labels[:, 1] = categories
-        labels[:, 2] = x_center
-        labels[:, 3] = y_center
-        labels[:, 4] = width
-        labels[:, 5] = height
+        # column order: category, x, y, width, height; Plan to transpose the label
+        # reserve first column for idx of each instance.
         labels = torch.as_tensor(labels)
         if self.extra_info:
             actions = data_entries.action_id.to_numpy()
@@ -165,10 +143,37 @@ class LabeledDataset(torch.utils.data.Dataset):
             extra['ego_image'] = ego_image
             extra['lane_image'] = lane_image
             extra['file_path'] = sample_path
+
             return image_tensor, labels, road_image, extra
 
         else:
             return image_tensor, labels, road_image
+
+
+    def build_labels(self, corners):
+        labels = np.zeros((corners.shape[0], 6 + 2))
+        for idx, corner in enumerate(corners):
+            point_squence = np.stack([corner[:, 0], corner[:, 1], corner[:, 3], corner[:, 2], corner[:, 0]])
+            x = point_squence.T[0] * 10 + 400
+            y = - point_squence.T[1] * 10 + 400
+            xc = (x.min().item() + x.max().item()) / 2
+            yc = (y.min().item() + y.max().item()) / 2
+            w = np.abs(x.min().item() - x.max().item())
+            h = np.abs(y.min().item() - y.max().item())
+            # normalize to 0-1
+            labels[idx, 2] = xc / 800
+            labels[idx, 3] = yc / 800
+            labels[idx, 4] = w / 800
+            labels[idx, 5] = h / 800
+            # build directions
+            # compute angle
+            vector1 = np.array([x[0], y[0]])
+            vector2 = np.array([x[1], y[1]])
+            cxy = np.array([xc, yc])
+            direction = (vector1 - cxy) + (vector2 - cxy)
+            direction = direction / np.linalg.norm(direction)
+            labels[idx, 6:] = direction
+        return labels
 
 # The dataset class for labeled data.
 class LabeledDatasetLarge(torch.utils.data.Dataset):
@@ -221,48 +226,37 @@ class LabeledDatasetLarge(torch.utils.data.Dataset):
                 image = image.rotate(-180)
             new_img.paste(image, (x_offset, y_offset))
             x_offset += RESIZE_DIM
-        new_img.save(f'../foo/{scene_id}_{sample_id}.jpg')
+        #new_img.save(f'../foo/{scene_id}_{sample_id}.jpg')
         image_tensor = torch.as_tensor(self.transform(new_img))
         # print(image_tensor.shape)
         data_entries = self.annotation_dataframe[
             (self.annotation_dataframe['scene'] == scene_id) & (
                         self.annotation_dataframe['sample'] == sample_id)]
-        corners = data_entries[['fl_x', 'fr_x', 'bl_x', 'br_x', 'fl_y', 'fr_y', 'bl_y', 'br_y']].to_numpy()
-        categories = data_entries.category_id.to_numpy()
+        corners = data_entries[['fl_x', 'fr_x', 'bl_x', 'br_x', 'fl_y', 'fr_y', 'bl_y', 'br_y']]\
+            .to_numpy().reshape(-1, 2, 4)
+        labels = np.zeros((corners.shape[0], 6))
+        for idx, corner in  enumerate(corners):
+            point_squence = np.stack([corner[:, 0], corner[:, 1], corner[:, 3], corner[:, 2], corner[:, 0]])
+            x = point_squence.T[0] * 10 + 400
+            y = - point_squence.T[1] * 10 + 400
+            xc = (x[0] + x[2]) / 2
+            yc = (y[0] + y[1]) / 2
+            w = np.abs(x[0] - x[2]) / 2
+            h = np.abs(y[0] - y[1]) / 2
+            # normalize to 0-1
+            labels[idx, 2] = xc / 800
+            labels[idx, 3] = yc / 800
+            labels[idx, 4] = w / 800
+            labels[idx, 5] = h / 800
 
+        categories = data_entries.category_id.to_numpy()
         ego_path = os.path.join(sample_path, 'ego.png')
         ego_image = Image.open(ego_path)
         ego_image = torchvision.transforms.functional.to_tensor(ego_image)
         road_image = convert_map_to_road_map(ego_image)
-
-        bounding_box = corners.reshape((-1, 2, 4))
-        # convert to the grid final 800 x 800 grid
-        bounding_box = bounding_box * 10 + 400
-        num_bbs = bounding_box.shape[0]
-        # leave the first column as an identifier
-        labels = np.zeros((num_bbs, 5 + 1))
-        # compute width by (x_fl, y_fl) - (x_fr, y_fr)
-        width = (bounding_box[:, 0, 0] - bounding_box[:, 0, 1]) ** 2 + \
-                (bounding_box[:, 1, 0] - bounding_box[:, 1, 1]) ** 2
-        width = np.sqrt(width)
-        # compute height in a same way
-        height = (bounding_box[:, 0, 1] - bounding_box[:, 0, 3]) ** 2 + \
-                 (bounding_box[:, 1, 1] - bounding_box[:, 1, 3]) ** 2
-        height = np.sqrt(height)
-        # get x center
-        x_center = (bounding_box[:, 0, 0] + bounding_box[:, 0, 1]) / 2
-        y_center = (bounding_box[:, 1, 0] + bounding_box[:, 1, 1]) / 2
-        # normalize by 800
-        x_center /= 800
-        y_center /= 800
-        width /= 800
-        height /= 800
-        # column order: category, x, y, width, height; Plan to transpose the label
         labels[:, 1] = categories
-        labels[:, 2] = y_center
-        labels[:, 3] = x_center
-        labels[:, 4] = height
-        labels[:, 5] = width
+        # column order: category, x, y, width, height; Plan to transpose the label
+        # reserve first column for idx of each instance.
         labels = torch.as_tensor(labels)
         if self.extra_info:
             actions = data_entries.action_id.to_numpy()
