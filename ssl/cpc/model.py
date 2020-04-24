@@ -181,7 +181,7 @@ class CPCModel(nn.Module):
 
     def _get_device(self):
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        print("Running on:", device)
+        print(f"Running on: {device}, {torch.cuda.get_device_name()}")
         return device
 
     def encode_fixed(self, inputs):

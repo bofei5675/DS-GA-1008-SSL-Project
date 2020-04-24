@@ -11,9 +11,9 @@ import torchvision.transforms as transforms
 
 
 class UnlabeledDataset(torch.utils.data.Dataset):
-    def __init__(self, image_folder, seq_length, transform, folders_len=126):
+    def __init__(self, image_folder, seq_length, transform, folders=np.arange(126)):
         self.image_folder = image_folder
-        folders = range(folders_len)
+        folders = folders
 
         self.image_names = [
             'CAM_FRONT_LEFT.jpeg',

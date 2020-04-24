@@ -9,10 +9,11 @@ class Args:
     rnn_seq_len = 3
     valid_size = 0.2
 
-    use_cosine_similarity = True
+    temperature = 0.5
+    encoder_update_every_n_steps = 5
     weight_decay = 10e-6
 
-    batch_size = 4
+    batch_size = 32
     device = 'cuda=0'
     epochs = 80
 
