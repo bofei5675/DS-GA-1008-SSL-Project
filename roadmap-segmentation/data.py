@@ -149,6 +149,8 @@ class LabeledDataset(torch.utils.data.Dataset):
             extra['ego_image'] = ego_image
             extra['lane_image'] = lane_image
             extra['file_path'] = sample_path
+            extra['scene_id'] = scene_id
+            extra['sample_id'] = sample_id
 
             return image_tensor, labels, road_image, extra
 
