@@ -87,9 +87,8 @@ class UnlabeledDataset(torch.utils.data.Dataset):
             image = Image.open(image_path)
 
             return self.transform(image), index % NUM_IMAGE_PER_SAMPLE
-
 # The dataset class for labeled data.
-class LabeledDatasetLarge(torch.utils.data.Dataset):
+class LabeledDataset(torch.utils.data.Dataset):
     def __init__(self, image_folder, annotation_file, scene_index, transform, extra_info=True):
         """
         Args:
@@ -113,54 +112,20 @@ class LabeledDatasetLarge(torch.utils.data.Dataset):
         scene_id = self.scene_index[index // NUM_SAMPLE_PER_SCENE]
         sample_id = index % NUM_SAMPLE_PER_SCENE
         sample_path = os.path.join(self.image_folder, f'scene_{scene_id}', f'sample_{sample_id}')
-
-        total_width = RESIZE_DIM * 3
-        total_height = RESIZE_DIM * 2
-        new_img = Image.new('RGB', (total_width, total_height))
-        x_offset = 0
-        for image_name in image_names[: 3]:
+        images = []
+        for image_name in image_names:
             image_path = os.path.join(sample_path, image_name)
             image = Image.open(image_path)
-            image = image.resize((RESIZE_DIM, RESIZE_DIM))
-            new_img.paste(image, (x_offset, 0))
-            x_offset += RESIZE_DIM
-        x_offset = 0
-        y_offset = RESIZE_DIM
-        for image_name in image_names[3:]:
-            image_path = os.path.join(sample_path, image_name)
-            image = Image.open(image_path)
-            image = image.resize((RESIZE_DIM, RESIZE_DIM))
-            # keep spatial information
-            if 'CAM_BACK.jpeg' == image_name:
-                image = image.rotate(-180)
-            elif 'CAM_BACK_LEFT.jpeg' == image_name:
-                image = image.rotate(180)
-            else:
-                image = image.rotate(-180)
-            new_img.paste(image, (x_offset, y_offset))
-            x_offset += RESIZE_DIM
-        #new_img.save(f'../foo/{scene_id}_{sample_id}.jpg')
-        image_tensor = torch.as_tensor(self.transform(new_img))
-        # print(image_tensor.shape)
+            image = self.transform(image)
+            image = image.unsqueeze(0)
+            images.append(image)
+        image_tensor = torch.cat(images, dim=0)
         data_entries = self.annotation_dataframe[
             (self.annotation_dataframe['scene'] == scene_id) & (
-                        self.annotation_dataframe['sample'] == sample_id)]
-        corners = data_entries[['fl_x', 'fr_x', 'bl_x', 'br_x', 'fl_y', 'fr_y', 'bl_y', 'br_y']]\
+                    self.annotation_dataframe['sample'] == sample_id)]
+        corners = data_entries[['fl_x', 'fr_x', 'bl_x', 'br_x', 'fl_y', 'fr_y', 'bl_y', 'br_y']] \
             .to_numpy().reshape(-1, 2, 4)
-        labels = np.zeros((corners.shape[0], 6))
-        for idx, corner in  enumerate(corners):
-            point_squence = np.stack([corner[:, 0], corner[:, 1], corner[:, 3], corner[:, 2], corner[:, 0]])
-            x = point_squence.T[0] * 10 + 400
-            y = - point_squence.T[1] * 10 + 400
-            xc = (x[0] + x[2]) / 2
-            yc = (y[0] + y[1]) / 2
-            w = np.abs(x[0] - x[2]) / 2
-            h = np.abs(y[0] - y[1]) / 2
-            # normalize to 0-1
-            labels[idx, 2] = xc / 800
-            labels[idx, 3] = yc / 800
-            labels[idx, 4] = w / 800
-            labels[idx, 5] = h / 800
+        labels = self.build_labels(corners)
 
         categories = data_entries.category_id.to_numpy()
         ego_path = os.path.join(sample_path, 'ego.png')
@@ -171,10 +136,12 @@ class LabeledDatasetLarge(torch.utils.data.Dataset):
         # column order: category, x, y, width, height; Plan to transpose the label
         # reserve first column for idx of each instance.
         labels = torch.as_tensor(labels)
+        road_image_temp = torch.zeros(road_image.shape)
+        road_image_temp[road_image] = 1
+        road_image = road_image_temp
         if self.extra_info:
             actions = data_entries.action_id.to_numpy()
             # You can change the binary_lane to False to get a lane with
-            # 这个是segmentation 的label
             lane_image = convert_map_to_lane_map(ego_image, binary_lane=True)
 
             extra = {}
@@ -183,9 +150,32 @@ class LabeledDatasetLarge(torch.utils.data.Dataset):
             extra['lane_image'] = lane_image
             extra['file_path'] = sample_path
 
-
             return image_tensor, labels, road_image, extra
 
         else:
             return image_tensor, labels, road_image
 
+    def build_labels(self, corners):
+        labels = np.zeros((corners.shape[0], 6 + 2))
+        for idx, corner in enumerate(corners):
+            point_squence = np.stack([corner[:, 0], corner[:, 1], corner[:, 3], corner[:, 2], corner[:, 0]])
+            x = point_squence.T[0] * 10 + 400
+            y = - point_squence.T[1] * 10 + 400
+            xc = (x.min().item() + x.max().item()) / 2
+            yc = (y.min().item() + y.max().item()) / 2
+            w = np.abs(x.min().item() - x.max().item())
+            h = np.abs(y.min().item() - y.max().item())
+            # normalize to 0-1
+            labels[idx, 2] = xc / 800
+            labels[idx, 3] = yc / 800
+            labels[idx, 4] = w / 800
+            labels[idx, 5] = h / 800
+            # build directions
+            # compute angle
+            vector1 = np.array([x[0], y[0]])
+            vector2 = np.array([x[1], y[1]])
+            cxy = np.array([xc, yc])
+            direction = (vector1 - cxy) + (vector2 - cxy)
+            direction = direction / np.linalg.norm(direction)
+            labels[idx, 6:] = direction
+        return labels
