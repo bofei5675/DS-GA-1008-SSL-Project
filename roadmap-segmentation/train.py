@@ -20,6 +20,7 @@ from torch.autograd import Variable
 import torch.optim as optim
 from helper import collate_fn, draw_box, collate_fn2
 import torchsummary
+from pix2vox import pix2vox
 
 def weights_init_normal(m):
     classname = m.__class__.__name__
@@ -44,7 +45,8 @@ def setup(args = None):
         labeled_scene_index_train = np.arange(106, 130)
         labeled_scene_index_val = np.arange(130, 134)
 
-    model = UNet(3, 1).to(device)
+    # model = UNet(3, 1).to(device)
+    model = pix2vox().to(device)
     transform = transforms.Compose([transforms.Resize((416, 416)),
                                     transforms.ToTensor()])
 
@@ -197,4 +199,3 @@ def write_to_log(text, save_dir):
     f.close()
 
 
-                                                               
