@@ -120,6 +120,8 @@ class UNet(nn.Module):
         self.up5 = Up(64, 32, bilinear)
         self.outc = OutConv(32, n_outchannels)
 
+        self.mapping = torch.nn.Conv2d(6, 1, kernel_size=1)
+
     def forward(self, x):
         x1 = self.inc(x)
         x2 = self.down1(x1)
