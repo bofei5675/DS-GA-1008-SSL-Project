@@ -7,19 +7,20 @@ class Args:
     output_size = 128
     rnn_n_layers = 2
     rnn_seq_len = 3
-    valid_size = 0.2
+    valid_size = 0.05
 
     temperature = 0.5
     encoder_update_every_n_steps = 5
     weight_decay = 10e-6
 
-    batch_size = 32
-    device = 'cuda=0'
+    # adjust_batch_size
+    batch_size = 10
+    device = 'cuda'
     epochs = 80
 
     data_dir = '../data'
     log_dir = '../runs/logs'
-    mdl_dir = '../runs/bestmodel'
+    mdl_dir = '../runs/bestmodels'
     scripts_dir = '../runs/scripts'
     eval_every_n_epochs = 1
-    log_every_n_steps = 50
+    log_every_n_steps = 30

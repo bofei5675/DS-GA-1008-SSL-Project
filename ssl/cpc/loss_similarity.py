@@ -7,14 +7,15 @@ class CPCLoss(torch.nn.Module):
         super().__init__()
 
         self.tau = args.temperature
+        self.device = args.device
 
     def forward(self, x, y):
         """
         Input: x, y are matrices with shape (batch, hid_size)
         Return: NTxent loss
         """
-        x = x.view(x.shape[0], -1)
-        y = y.view(y.shape[0], -1)
+        x = x.view(x.shape[0], -1).to(self.device)
+        y = y.view(y.shape[0], -1).to(self.device)
         x_norm = x / (torch.norm(x, dim=1).reshape(-1, 1))
         y_norm = y / (torch.norm(y, dim=1).reshape(-1, 1))
         xy_norm = torch.cat([x_norm, y_norm], dim=0)

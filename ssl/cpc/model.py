@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.models as models
-from torch.nn.parallel import data_parallel
+from torch.nn.parallel import data_parallel, DistributedDataParallel
 
 
 class EncoderResNet(nn.Module):
@@ -82,6 +82,9 @@ class Seq2seq(nn.Module):
 
         self.encoder = self._get_encodermodel(encoder_model)
         self.decoder = self._get_decodermodel(decoder_model)
+
+        self.encoder.flatten_parameters()
+        self.decoder.flatten_parameters()
 
         self.weights_init()
 
@@ -191,7 +194,7 @@ class CPCModel(nn.Module):
     def forward(self, inputs):
         f, x = data_parallel(self.encoder_q, inputs.to(self.device))
         x = x.transpose_(1, 0)
-        x = data_parallel(self.seq2seq, x)
+        x = self.seq2seq(x)
         outputs = x.transpose_(1, 0)
         return outputs
 
