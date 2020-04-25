@@ -8,6 +8,7 @@ from model import CPCModel
 from config import Args
 from loss_similarity import CPCLoss
 from dataset_wrapper import DataSetWrapper
+torch.autograd.set_detect_anomaly(True)
 
 
 class CPC_train(object):
@@ -39,18 +40,19 @@ class CPC_train(object):
 
         return loss
 
-    def _load_pre_trained_weights(self, model):
-        try:
-            state_dict = torch.load(os.path.join(self.args.mdl_dir, 'model.pth'))
-            model.load_state_dict(state_dict)
-            print("\nLoaded pre-trained model with success.")
-            with open(self.args.log_dir + '/config.txt', 'a') as f:
-                f.write("\nLoaded pre-trained model with success.")
+    def _load_pre_trained_weights(self, model, args):
+        if args.pre_train:
+            try:
+                state_dict = torch.load(os.path.join(self.args.mdl_dir, 'model.pth'))
+                model.load_state_dict(state_dict)
+                print("\nLoaded pre-trained model with success.")
+                with open(self.args.log_dir + '/config.txt', 'a') as f:
+                    f.write("\nLoaded pre-trained model with success.")
 
-        except FileNotFoundError:
-            print("\nPre-trained weights not found. Training from scratch.")
-            with open(self.args.log_dir + '/config.txt', 'a') as f:
-                f.write("\nPre-trained weights not found. Training from scratch.")
+            except FileNotFoundError:
+                print("\nPre-trained weights not found. Training from scratch.")
+                with open(self.args.log_dir + '/config.txt', 'a') as f:
+                    f.write("\nPre-trained weights not found. Training from scratch.")
 
         return model
 
@@ -74,13 +76,11 @@ class CPC_train(object):
 
         train_loader, valid_loader = self.dataset.get_data_loader()
         model = CPCModel(self.args)
-        model = self._load_pre_trained_weights(model)
+        model = self._load_pre_trained_weights(model, self.args)
 
-        optimizer = torch.optim.Adam(model.parameters(), 3e-4, weight_decay=self.args.weight_decay)
+        optimizer = torch.optim.Adam(model.parameters(), 5e-4, weight_decay=self.args.weight_decay)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=len(train_loader), eta_min=0,
                                                                last_epoch=-1)
-
-        start_time = time.time()
 
         n_iter = 0
         valid_n_iter = 0
@@ -89,6 +89,7 @@ class CPC_train(object):
         model.train()
 
         for epoch_counter in range(self.args.epochs):
+            start_time = time.time()
             for iteration, (x, y) in enumerate(train_loader):
 
                 optimizer.zero_grad()
