@@ -66,7 +66,7 @@ for idx, (sample, target, road_image, extra) in enumerate(valloader):
             detections.append(output)
             loss += layer_loss
         detections = to_cpu(torch.cat(detections, 1))
-        print('average/max conf:', detections[:, :, 4].mean().item(), detections[:, :, 4].max().item())
+        print('average/max conf:', detections[:, :, 6].mean().item(), detections[:, :, 6].max().item())
         print('loss:', loss.item(), target.shape)
         detections = non_max_suppression(detections, args.threshold, 0)
     for meta_info, detection in zip(extra, detections):

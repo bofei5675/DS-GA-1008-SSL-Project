@@ -20,17 +20,29 @@ from matplotlib.ticker import NullLocator
 import pandas as pd
 from tqdm import tqdm
 import os
+from pix2vox import pix2vox
+
 parser = argparse.ArgumentParser()
 parser.add_argument('-bs', '--batch-size', dest='batch_size', default=4, type=int)
-parser.add_argument('-lm', '--load-model', dest='load_model', default='/scratch/bz1030/data_ds_1008/detection/roadmap-segmentation/runs/unet_2020-04-25_04-16-58/best-model-5.pth', type=str)
+parser.add_argument('-lm', '--load-model',
+                    dest='load_model',
+                    default='/scratch/bz1030/data_ds_1008/detection/roadmap-segmentation/runs/pix2vox_2020-04-26_00-29-58/best-model-6.pth',
+                    type=str)
 parser.add_argument('-th', '--threshold', dest='threshold', default=0.5, type=float)
+parser.add_argument('-m', '--model', dest='model', default='pix2vox', type=str,
+                    choices=['unet', 'pix2vox'])
 
 args = parser.parse_args()
 args.demo = False
+args.pre_train = False
 _, _, _, valloader = setup(args)
 use_cuda = torch.cuda.is_available()
 device = torch.device("cuda" if  use_cuda else "cpu")
-model = UNet(3, 1).to(device)
+
+if args.model == 'unet':
+    model = UNet(3, 1).to(device)
+elif args.model == 'pix2vox':
+    model = pix2vox().to(device)
 save_dir = args.load_model.split('/')
 save_dir = '/'.join(save_dir[:-1])
 save_dir += '/eval_fig'
@@ -52,14 +64,18 @@ for idx, (sample, target, road_image, extra) in enumerate(valloader):
     target = road_image.to(device)
     sample = sample.to(device)
     with torch.no_grad():
-        outputs = []
-        for image_idx in range(6):
-            image = sample[:, image_idx].squeeze(dim=1)
-            output = model(image)
-            outputs.append(output)
-        # combine outputs
-        outputs = torch.cat(outputs, dim=1)
-        outputs = model.mapping(outputs).squeeze(dim=1)
+        if args.model == 'unet':
+            outputs = []
+            for image_idx in range(6):
+                image = sample[:, image_idx].squeeze(dim=1)
+                output = model(image)
+                outputs.append(output)
+
+            # combine outputs
+            outputs = torch.cat(outputs, dim=1)
+            outputs = model.mapping(outputs).squeeze(dim=1)
+        elif args.model == 'pix2vox':
+            outputs = model(sample).squeeze(dim=1)
         # compute loss
         loss = criterion(outputs, target)
         prob = torch.sigmoid(outputs)

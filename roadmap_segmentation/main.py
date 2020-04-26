@@ -17,6 +17,11 @@ parser.add_argument('-bs', '--batch-size', dest='batch_size',
                     type=int, default=1)
 parser.add_argument('-dm', '--demo', dest='demo',
                     type=str2bool, default='no')
+parser.add_argument('-m', '--model', dest='model',
+                    type=str, default='pix2vox', choices=['unet', 'pix2vox'])
+parser.add_argument('-pt', '--pre-train', dest='pre_train',
+                    type=str2bool, default='no')
+
 args = parser.parse_args()
 
 if __name__ == '__main__':

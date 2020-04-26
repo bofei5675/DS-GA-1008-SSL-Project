@@ -4,8 +4,8 @@
 #SBATCH --cpus-per-task=1
 #SBATCH --time=16:00:00
 #SBATCH --mem=16GB
-#SBATCH --gres=gpu:p40:1
+#SBATCH --gres=gpu:1
 module purge
 source /scratch/bz1030/capstone_env/bin/activate
 cd ..
-python main.py -bs 4
+python main.py -bs 4 -m pix2vox -pt no
