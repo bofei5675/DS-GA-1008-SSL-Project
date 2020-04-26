@@ -6,12 +6,32 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 import numpy as np
 
-from utils.parse_config import *
-from utils.utils import build_targets, to_cpu, non_max_suppression
+from .utils.parse_config import *
+from .utils.utils import build_targets, to_cpu, non_max_suppression
 
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-
+def build_yolo():
+    image_height = 416
+    mask = '0,1,2'
+    anchors = '10, 13, 16, 30, 33, 23, 30, 61, 62, 45, 59, 119, 116, 90, 156, 198, 373, 326'
+    classes = 9
+    anchor_idxs = [int(x) for x in mask.split(",")]
+    # Extract anchors
+    anchors = [int(x) for x in anchors.split(",")]
+    anchors = [(anchors[i], anchors[i + 1]) for i in range(0, len(anchors), 2)]
+    anchors = [anchors[i] for i in anchor_idxs]
+    num_classes = int(classes)
+    img_size = image_height
+    obj_scale = 10
+    nonobj_scale = 1
+    regr_weights = 1
+    # Define detection layer
+    yolo_layer = YOLOLayer(anchors, num_classes, img_size,
+                           obj_scale,
+                           nonobj_scale,
+                           regr_weights)
+    return yolo_layer
 
 def create_modules(module_defs):
     """

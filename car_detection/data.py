@@ -133,6 +133,11 @@ class LabeledDataset(torch.utils.data.Dataset):
         # column order: category, x, y, width, height; Plan to transpose the label
         # reserve first column for idx of each instance.
         labels = torch.as_tensor(labels)
+
+        # build lane map label
+        road_image_temp = torch.zeros(road_image.shape)
+        road_image_temp[road_image] = 1
+        road_image = road_image_temp
         if self.extra_info:
             actions = data_entries.action_id.to_numpy()
             # You can change the binary_lane to False to get a lane with
@@ -143,7 +148,8 @@ class LabeledDataset(torch.utils.data.Dataset):
             extra['ego_image'] = ego_image
             extra['lane_image'] = lane_image
             extra['file_path'] = sample_path
-
+            extra['scene_id'] = scene_id
+            extra['sample_id'] = sample_id
             return image_tensor, labels, road_image, extra
 
         else:

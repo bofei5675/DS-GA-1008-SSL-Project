@@ -44,9 +44,10 @@ def setup(args = None):
     else:
         labeled_scene_index_train = np.arange(106, 130)
         labeled_scene_index_val = np.arange(130, 134)
-
-    # model = UNet(3, 1).to(device)
-    model = pix2vox().to(device)
+    if args.model == 'unet':
+        model = UNet(3, 1).to(device)
+    elif args.model == 'pix2vox':
+        model = pix2vox(args.pre_train).to(device)
     transform = transforms.Compose([transforms.Resize((416, 416)),
                                     transforms.ToTensor()])
 
@@ -99,7 +100,8 @@ def train_unet(model, optimizer, trainloader, valloader, args):
     if not os.path.exists('runs'):
         os.mkdir('runs')
     model_name = time.strftime("%Y-%m-%d_%H-%M-%S", time.gmtime())
-    model_name = 'unet' + '_' + model_name
+
+    model_name = args.model + '_' + model_name
     if not os.path.exists('runs/' + model_name):
         os.mkdir('runs/' + model_name)
         with open('runs/' + model_name + '/config.txt', 'w') as f:
@@ -108,9 +110,7 @@ def train_unet(model, optimizer, trainloader, valloader, args):
 
     save_dir = os.path.join('./runs', model_name)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model_file = open(save_dir + '/model_arch.txt', 'w')
-    print(torchsummary.summary(model, input_size=(3, 416, 416)), file=model_file)
-    model_file.close()
+    #print(torchsummary.summary(model, input_size=(6, 3, 416, 416)))
     model.train()
     dataloader = {'train': trainloader, 'val': valloader}
     best_loss = [1e+6]
@@ -131,19 +131,24 @@ def train_unet(model, optimizer, trainloader, valloader, args):
             else:
                 model.eval()
             for idx, (sample, target, road_image, extra) in enumerate(dataloader[phase]):
+
                 sample = torch.stack(sample)
                 target = torch.stack(road_image)
                 sample = sample.to(device)
                 target = target.to(device)
                 with torch.set_grad_enabled(phase == 'train'):
-                    outputs = []
-                    for image_idx in range(6):
-                        image  = sample[:, image_idx].squeeze(dim=1)
-                        output = model(image)
-                        outputs.append(output)
-                    # combine outputs
-                    outputs = torch.cat(outputs, dim=1)
-                    outputs = model.mapping(outputs).squeeze(dim=1)
+                    if args.model == 'unet':
+                        outputs = []
+                        for image_idx in range(6):
+                            image  = sample[:, image_idx].squeeze(dim=1)
+                            output = model(image)
+                            outputs.append(output)
+
+                        # combine outputs
+                        outputs = torch.cat(outputs, dim=1)
+                        outputs = model.mapping(outputs).squeeze(dim=1)
+                    elif args.model == 'pix2vox':
+                        outputs = model(sample).squeeze(dim=1)
                     # compute loss
                     loss = criterion(outputs, target)
                     prob = torch.sigmoid(outputs)

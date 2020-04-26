@@ -6,9 +6,9 @@ class Encoder(torch.nn.Module):
     def __init__(self, cfg, pretrained=True):
         super(Encoder, self).__init__()
         self.cfg = cfg
-
+        self.pretrained=pretrained
         # Layer Definition
-        resnet50 = torchvision.models.resnet50(pretrained=pretrained)
+        resnet50 = torchvision.models.resnet50(pretrained=self.pretrained)
         self.resnet = torch.nn.Sequential(*list(resnet50.children()))[:-3]
         self.layer1 = torch.nn.Sequential(
             torch.nn.Conv2d(1024, 512, kernel_size=3),
@@ -28,8 +28,9 @@ class Encoder(torch.nn.Module):
         )
 
         # Don't update params in ResNet
-        for param in resnet50.parameters():
-            param.requires_grad = False
+        if not self.pretrained:
+            for param in resnet50.parameters():
+                param.requires_grad = False
 
     def forward(self, rendering_images):
         # print(rendering_images.size())  # torch.Size([batch_size, n_views, img_c, img_h, img_w])
@@ -307,11 +308,11 @@ class pix2vox(torch.nn.Module):
         self.init_weights()
 
     def forward(self, inputs):
-        encoder_outputs = encoder(inputs)
-        raw_features, gen_volumes = decoder(encoder_outputs)
-        merger_volumns = merger(raw_features, gen_volumes)
-        refiner_columns = refiner(merger_volumns)
-        outputs = mapper(refiner_columns)
+        encoder_outputs = self.encoder(inputs)
+        raw_features, gen_volumes = self.decoder(encoder_outputs)
+        merger_volumns = self.merger(raw_features, gen_volumes)
+        refiner_columns = self.refiner(merger_volumns)
+        outputs = self.mapper(refiner_columns)
         return outputs
 
     def init_weights(m):
