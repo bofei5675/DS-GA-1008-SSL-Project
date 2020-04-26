@@ -8,6 +8,7 @@ from model import CPCModel
 from config import Args
 from loss_similarity import CPCLoss
 from dataset_wrapper import DataSetWrapper
+
 torch.autograd.set_detect_anomaly(True)
 
 
@@ -98,9 +99,9 @@ class CPC_train(object):
                 loss = self._step(model, x, y)
 
                 if n_iter % self.args.log_every_n_steps == 0:
-                    time_cost = time.time() - start_time
-                    time_left = (time_cost / (iteration + 1)) * len(train_loader) / 60
-                    info = "\n====> Cur_iter: [{}]: Epoch[{}]({}/{}): time cost: {:4.4f} s: time left: {:4.4f} m: ".format(
+                    time_cost = (time.time() - start_time) / 60
+                    time_left = (time_cost / (iteration + 1)) * len(train_loader)
+                    info = "\n====> Cur_iter: [{}]: Epoch[{}]({}/{}): time cost: {:4.4f} m: time left: {:4.4f} m: ".format(
                         n_iter, epoch_counter,
                         iteration,
                         len(train_loader),
@@ -122,11 +123,12 @@ class CPC_train(object):
             if epoch_counter % self.args.eval_every_n_epochs == 0:
                 valid_loss = self._validate(model, valid_loader)
 
-                info = "\n====> Cur_iter: [{}]: Valid Epoch[{}]({}/{}): time: {:4.4f}: ".format(n_iter,
-                                                                                                valid_n_iter,
-                                                                                                len(valid_loader),
-                                                                                                len(valid_loader),
-                                                                                                time.time() - start_time)
+                info = "\n====> Cur_iter: [{}]: Valid Epoch[{}]({}/{}): time: {:4.4f}: m".format(n_iter,
+                                                                                                 valid_n_iter,
+                                                                                                 len(valid_loader),
+                                                                                                 len(valid_loader),
+                                                                                                 (
+                                                                                                         time.time() - start_time) / 60)
 
                 info += 'Valid Loss: {:.4f}'.format(valid_loss)
                 with open(self.args.log_dir + '/config.txt', 'a') as f:
@@ -145,10 +147,11 @@ class CPC_train(object):
             if epoch_counter >= 10:
                 scheduler.step()
 
-                info = "\n====> Cur_iter: [{}]: Epoch[{}]({}/{}): time: {:4.4f}: ".format(n_iter, epoch_counter,
-                                                                                          iteration,
-                                                                                          len(train_loader),
-                                                                                          time.time() - start_time)
+                info = "\n====> Cur_iter: [{}]: Epoch[{}]({}/{}): time: {:4.4f}: m".format(n_iter, epoch_counter,
+                                                                                           iteration,
+                                                                                           len(train_loader),
+                                                                                           (
+                                                                                                   time.time() - start_time) / 60)
 
                 info += 'Change Learning Rate: {:.4f},'.format(scheduler.get_lr()[0])
                 with open(self.args.log_dir + '/config.txt', 'a') as f:
