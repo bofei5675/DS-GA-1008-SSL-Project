@@ -36,7 +36,9 @@ class CPC_train(object):
         y_hat = model(x)
         y_hat = F.normalize(y_hat, dim=2)
 
-        loss = self.criterion(y_hat, y)
+        x = model.encode_fixed(x)
+        x = F.normalize(x, dim=2)
+        loss = self.criterion(x, y_hat, y)
 
         return loss
 
