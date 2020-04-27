@@ -24,3 +24,4 @@ class Args:
     scripts_dir = '../runs/scripts'
     eval_every_n_epochs = 1
     log_every_n_steps = 30
+    pre_train=False

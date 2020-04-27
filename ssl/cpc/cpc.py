@@ -137,10 +137,11 @@ class CPC_train(object):
 
                 if valid_loss < best_valid_loss:
                     best_valid_loss = valid_loss
-                    info = "\n====> Saving Best Model."
-                    with open(self.args.log_dir + '/config.txt', 'a') as f:
-                        f.write(info)
-                    torch.save(model.state_dict(), os.path.join(self.args.mdl_dir, 'model.pth'))
+
+                info = "\n====> Saving Best Model."
+                with open(self.args.log_dir + '/config.txt', 'a') as f:
+                    f.write(info)
+                torch.save(model.state_dict(), os.path.join(self.args.mdl_dir, 'model.pth'))
 
                 valid_n_iter += 1
 
