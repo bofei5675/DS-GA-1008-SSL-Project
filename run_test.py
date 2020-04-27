@@ -59,7 +59,6 @@ for i, data in enumerate(dataloader):
     # only works for batch size = 1 ?
     predicted_bounding_boxes = model_loader.get_bounding_boxes(sample)[0].cpu()
     predicted_road_map = model_loader.get_binary_road_map(sample).cpu()
-    print(predicted_bounding_boxes)
     ats_bounding_boxes = compute_ats_bounding_boxes(predicted_bounding_boxes, target['bounding_box'][0])
     ts_road_map = compute_ts_road_map(predicted_road_map, road_image)
 
