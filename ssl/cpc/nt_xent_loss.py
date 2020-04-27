@@ -20,7 +20,7 @@ def nt_xent_loss(X, Y_hat, Y):
     exp_mat = torch.exp(sim_mat_1 / tau)
     exp_mat_row_sum = torch.sum(exp_mat, dim=1)
     exp_mat_diag = torch.diag(exp_mat)
-    denominator = (exp_mat_row_sum - exp_mat_diag)[3:]
+    denominator = (exp_mat_row_sum - exp_mat_diag)[X.shape[0]:]
 
     sim_mat_2 = YhY_norm @ YYh_norm.T
     numerator = torch.exp(torch.diag(sim_mat_2) / tau)
