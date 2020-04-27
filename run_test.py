@@ -13,12 +13,12 @@ from data_helper import LabeledDataset
 from helper import compute_ats_bounding_boxes, compute_ts_road_map
 
 from model_loader import get_transform, ModelLoader
-
+from tqdm import tqdm
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--data_dir', type=str, default='data')
+parser.add_argument('--data_dir', type=str, default='../DLSP20Dataset/data')
 parser.add_argument('--testset', action='store_true')
 parser.add_argument('--verbose', action='store_true')
 opt = parser.parse_args()
@@ -44,26 +44,28 @@ dataloader = torch.utils.data.DataLoader(
     shuffle=False,
     num_workers=4
     )
-
+bar = tqdm(total=len(dataloader), desc='Processing', ncols=90)
 model_loader = ModelLoader()
 
 total = 0
 total_ats_bounding_boxes = 0
 total_ts_road_map = 0
+bar = tqdm()
 for i, data in enumerate(dataloader):
     total += 1
     sample, target, road_image = data
     sample = sample.cuda()
-
+    #print(sample.shape)
+    # only works for batch size = 1 ?
     predicted_bounding_boxes = model_loader.get_bounding_boxes(sample)[0].cpu()
     predicted_road_map = model_loader.get_binary_road_map(sample).cpu()
-
+    print(predicted_bounding_boxes)
     ats_bounding_boxes = compute_ats_bounding_boxes(predicted_bounding_boxes, target['bounding_box'][0])
     ts_road_map = compute_ts_road_map(predicted_road_map, road_image)
 
     total_ats_bounding_boxes += ats_bounding_boxes
     total_ts_road_map += ts_road_map
-
+    bar.update(1)
     if opt.verbose:
         print(f'{i} - Bounding Box Score: {ats_bounding_boxes:.4} - Road Map Score: {ts_road_map:.4}')
 
