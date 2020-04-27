@@ -46,7 +46,7 @@ def compute_ats_bounding_boxes(boxes1, boxes2):
     boxes2_min_x = boxes2[:, 0].min(dim=1)[0]
     boxes2_max_y = boxes2[:, 1].max(dim=1)[0]
     boxes2_min_y = boxes2[:, 1].min(dim=1)[0]
-
+    ''''''
     condition1_matrix = (boxes1_max_x.unsqueeze(1) > boxes2_min_x.unsqueeze(0))
     condition2_matrix = (boxes1_min_x.unsqueeze(1) < boxes2_max_x.unsqueeze(0))
     condition3_matrix = (boxes1_max_y.unsqueeze(1) > boxes2_min_y.unsqueeze(0))
@@ -60,7 +60,7 @@ def compute_ats_bounding_boxes(boxes1, boxes2):
                 iou_matrix[i][j] = compute_iou(boxes1[i], boxes2[j])
 
     iou_max = iou_matrix.max(dim=0)[0]
-
+    print(iou_max)
     iou_thresholds = [0.5, 0.6, 0.7, 0.8, 0.9]
     total_threat_score = 0
     total_weight = 0

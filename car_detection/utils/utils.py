@@ -9,6 +9,7 @@ from torch.autograd import Variable
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+from shapely.geometry import Polygon
 
 
 def to_cpu(tensor):
@@ -261,6 +262,105 @@ def non_max_suppression(prediction, conf_thres=0.5, nms_thres=0.4):
         if keep_boxes:
             output[image_i] = torch.stack(keep_boxes)
 
+    return output
+def rectangle(center, vector, l, w):
+    '''
+    Input: center, direction vector, length and width. Shape: 2, 2, 1, 1
+    Output: Four corners of this rectangle
+    '''
+    vector = vector / torch.norm(vector)
+    length = max([l, w])
+    width = min([l, w])
+    vector_p = torch.tensor([vector[1], -vector[0]])
+
+    a = center + length * vector / 2 + width * vector_p / 2
+    b = center + length * vector / 2 - width * vector_p / 2
+    c = center - length * vector / 2 + width * vector_p / 2
+    d = center - length * vector / 2 - width * vector_p / 2
+
+    return a, b, c, d
+
+def rectangle_np(center, vector, l, w):
+    '''
+    Input: center, direction vector, length and width. Shape: 2, 2, 1, 1
+    Output: Four corners of this rectangle
+    '''
+    vector = vector / np.linalg.norm(vector)
+    length = max([l, w])
+    width = min([l, w])
+    vector_p = np.array([vector[1], -vector[0]])
+
+    a = center + length * vector / 2 + width * vector_p / 2
+    b = center + length * vector / 2 - width * vector_p / 2
+    c = center - length * vector / 2 + width * vector_p / 2
+    d = center - length * vector / 2 - width * vector_p / 2
+
+    return a, b, c, d
+
+def xywhrot2corners(predictions):
+    '''
+
+    :param predictions:
+    :return:
+    '''
+    corners = []
+    for pred in predictions:
+        xc, yc, w, h, rot_x, rot_y = pred.cpu().numpy()
+        center = np.array([xc, yc])
+        direction = np.array([rot_x, rot_y])
+        cor1, cor2, cor3, cor4  = rectangle_np(center, direction, h * 2, w * 2)
+        corner = np.stack([cor1, cor2, cor3, cor4]).T
+        corners.append(corner)
+    return np.stack(corners)
+
+
+
+def nms_with_rot(prediction, conf_thres=0.5, nms_thres=0.4):
+    """
+    Removes detections with lower object confidence score than 'conf_thres' and performs
+    Non-Maximum Suppression to further filter detections.
+    Returns detections with shape:
+        (x1, y1, x2, y2, object_conf, x_dir, y_dir, class_score, class_pred)
+    """
+
+    # From (center x, center y, width, height) to (x1, y1, x2, y2)
+    output = [None for _ in range(len(prediction))]
+    for image_i, image_pred in enumerate(prediction):
+        # Filter out confidence scores below threshold
+        image_pred = image_pred[image_pred[:, 6] >= conf_thres]
+        # If none are remaining => process next image
+        if image_pred.shape[0] <= 0:
+            continue
+        # Object confidence times class confidence
+        score = image_pred[:, 6]
+        # Sort by it
+        image_pred = image_pred[(-score).argsort()]
+        class_confs, class_preds = image_pred[:, 7:].max(1, keepdim=True)
+        # get bounding box
+        #print('filter by confidence', image_pred.shape)
+        bbox = xywhrot2corners(image_pred[:, :6])
+        #print(bbox.shape)
+        detections = torch.cat((image_pred[:, :6], class_confs.float(), class_preds.float()), 1)
+        # Perform non-maximum suppression
+        num_boxes = bbox.shape[0]
+        keep_boxes = [True for i in range(num_boxes)]
+
+        for i in range(num_boxes):
+            if not keep_boxes[i]:
+                continue
+            score = image_pred[i, 6]
+            for j in range(i + 1, num_boxes):
+                if keep_boxes[j]:
+                    box1 = bbox[i]
+                    box2 = bbox[j]
+                    box1 = Polygon(box1.T).convex_hull
+                    box2 = Polygon(box2.T).convex_hull
+                    iou = box1.intersection(box2).area / box1.union(box2).area
+                    if iou > nms_thres:
+                        keep_boxes[j] = False
+
+        bbox = bbox[keep_boxes]
+        output[image_i] = torch.tensor(bbox)
     return output
 
 

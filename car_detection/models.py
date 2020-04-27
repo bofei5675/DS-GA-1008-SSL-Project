@@ -7,7 +7,7 @@ from torch.autograd import Variable
 import numpy as np
 
 from .utils.parse_config import *
-from .utils.utils import build_targets, to_cpu, non_max_suppression
+from car_detection.utils.utils import build_targets, to_cpu, non_max_suppression
 
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
@@ -226,7 +226,7 @@ class YOLOLayer(nn.Module):
         )
 
         if targets is None:
-            return output, 0
+            return output, 0, {}
         else:
             loss, metrics = yolo_loss(x, y, w, h, xdir, ydir, pred_boxes, pred_conf, pred_cls, targets,
                                             self.scaled_anchors,
