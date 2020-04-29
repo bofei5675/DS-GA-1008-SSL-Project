@@ -28,8 +28,8 @@ class ModelLoader():
     team_member = ['Bofei Zhang', 'Cui Can', 'Yuanxi Sun']
     contact_email = 'bz1030@nyu.edu'
 
-    def __init__(self, detection_model='./best-model-1.pth',
-                 segmentation_model='./roadmap_segmentation/runs/pix2vox_2020-04-26_01-18-51/best-model-15.pth'):
+    def __init__(self, detection_model='./model_weights/best-model-yolo.pth',
+                 segmentation_model='./model_weights/best-model-pix2vox.pth'):
         self.model_detection = Darknet('./car_detection/config/yolov3.cfg', 416)
         self.model_segmentation = pix2vox()
         self.use_cuda = torch.cuda.is_available()
@@ -46,6 +46,8 @@ class ModelLoader():
             state_dict2 = torch.load(segmentation_model)
             self.model_detection.load_state_dict(state_dict1, map_location='cpu')
             self.model_segmentation.load_state_dict(state_dict2, map_location='cpu')
+        self.model_segmentation.eval()
+        self.model_detection.eval()
 
     def get_bounding_boxes(self, samples):
         # samples is a cuda tensor with size [batch_size, 6, 3, 256, 306]
