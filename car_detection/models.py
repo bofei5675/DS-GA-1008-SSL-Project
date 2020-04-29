@@ -6,8 +6,8 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 import numpy as np
 
-from .utils.parse_config import *
-from car_detection.utils.utils import build_targets, to_cpu, non_max_suppression
+from utils.parse_config import *
+from utils.utils import build_targets, to_cpu, non_max_suppression
 
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
@@ -177,8 +177,6 @@ class YOLOLayer(nn.Module):
     def forward(self, x, targets=None, img_dim=None):
         # Tensors for cuda support
         FloatTensor = torch.cuda.FloatTensor if x.is_cuda else torch.FloatTensor
-        LongTensor = torch.cuda.LongTensor if x.is_cuda else torch.LongTensor
-        ByteTensor = torch.cuda.ByteTensor if x.is_cuda else torch.ByteTensor
 
         self.img_dim = img_dim
         num_samples = x.size(0)
@@ -214,7 +212,7 @@ class YOLOLayer(nn.Module):
         pred_boxes[..., 2] = torch.exp(w.data) * self.anchor_w
         pred_boxes[..., 3] = torch.exp(h.data) * self.anchor_h
         pred_boxes[..., 4:] = pred_rotation
-        #print('pred boxes',pred_boxes.shape)
+        # print('stride ???', self.stride)
         pred_boxes[..., :4] = pred_boxes[..., :4] * self.stride
         output = torch.cat(
             (

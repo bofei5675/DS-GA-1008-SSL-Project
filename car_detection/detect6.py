@@ -18,8 +18,8 @@ from tqdm import tqdm
 parser = argparse.ArgumentParser()
 parser.add_argument('-mc', '--model-config', dest='model_config', default='./config/yolov3.cfg', type=str)
 parser.add_argument('-bs', '--batch-size', dest='batch_size', default=4, type=int)
-parser.add_argument('-lm', '--load-model', dest='load_model', default='/scratch/bz1030/data_ds_1008/detection/car-detection/runs/yolov3_2020-04-21_08-49-56/best-model-1.pth', type=str)
-parser.add_argument('-th', '--threshold', dest='threshold', default=0.5, type=float)
+parser.add_argument('-lm', '--load-model', dest='load_model', default='../model_weights/best-model-yolo.pth', type=str)
+parser.add_argument('-th', '--threshold', dest='threshold', default=0.7, type=float)
 
 args = parser.parse_args()
 args.demo = False
@@ -68,12 +68,13 @@ for idx, (sample, target, road_image, extra) in enumerate(valloader):
         detections = to_cpu(torch.cat(detections, 1))
         print('average/max conf:', detections[:, :, 6].mean().item(), detections[:, :, 6].max().item())
         print('loss:', loss.item(), target.shape)
-        detections = non_max_suppression(detections, args.threshold, 0)
+        detections = nms_with_rot(detections, args.threshold, 0, extra)
     for meta_info, detection in zip(extra, detections):
         if detection is None:
             print('No  detection')
             continue
         detection = detection.numpy().reshape(1, -1)
+        print(detection.shape)
         detection = ' '.join([str(i) for i in detection.tolist()])
         result.append((meta_info['file_path'], detection))
     bar.update(1)

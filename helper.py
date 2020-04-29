@@ -34,6 +34,18 @@ def draw_box(ax, corners, color):
     ax.plot(point_squence.T[0] * 10 + 400, -point_squence.T[1] * 10 + 400, color=color)
 
 def compute_ats_bounding_boxes(boxes1, boxes2):
+    '''
+    boxes1 = prediction
+    boxes2 = label
+    :param boxes1:
+    :param boxes2:
+    :return:
+    '''
+    # transform label
+    boxes2_copy = boxes2.clone()
+    boxes2_copy[:, 0, :] = boxes2[:, 0, :] * 10 + 400
+    boxes2_copy[:, 1, :] = -boxes2[:, 1, :] * 10 + 400
+    boxes2 = boxes2_copy
     num_boxes1 = boxes1.size(0)
     num_boxes2 = boxes2.size(0)
 
@@ -56,12 +68,13 @@ def compute_ats_bounding_boxes(boxes1, boxes2):
     iou_matrix = torch.zeros(num_boxes1, num_boxes2)
     for i in range(num_boxes1):
         for j in range(num_boxes2):
-            if condition_matrix[i][j]:
-                iou_matrix[i][j] = compute_iou(boxes1[i], boxes2[j])
+            #if condition_matrix[i][j]:
+            iou_matrix[i][j] = compute_iou(boxes1[i], boxes2[j])
+            #print(iou_matrix[i][j])
 
     iou_max = iou_matrix.max(dim=0)[0]
-    print(iou_max)
-    iou_thresholds = [0.5, 0.6, 0.7, 0.8, 0.9]
+    #iou_thresholds = [0.5, 0.6, 0.7, 0.8, 0.9]
+    iou_thresholds = [0.3]
     total_threat_score = 0
     total_weight = 0
     for threshold in iou_thresholds:
@@ -85,3 +98,11 @@ def compute_iou(box1, box2):
     
     return a.intersection(b).area / a.union(b).area
 
+
+def draw_box_no_scale(ax, corners, color):
+    point_squence = torch.stack([corners[:, 0], corners[:, 1], corners[:, 3], corners[:, 2], corners[:, 0]])
+
+    # the corners are in meter and time 10 will convert them in pixels
+    # Add 400, since the center of the image is at pixel (400, 400)
+    # The negative sign is because the y axis is reversed for matplotlib
+    ax.plot(point_squence.T[0], point_squence.T[1], color=color)

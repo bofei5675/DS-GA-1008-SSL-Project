@@ -280,14 +280,17 @@ def rectangle(center, vector, l, w):
 
     return a, b, c, d
 
-def rectangle_np(center, vector, l, w):
+def rectangle_np(center, vector, xr, yr):
     '''
-    Input: center, direction vector, length and width. Shape: 2, 2, 1, 1
+    Input: center, direction vector, xrange and yrange. Shape: 2, 2, 1, 1
     Output: Four corners of this rectangle
     '''
-    vector = vector / np.linalg.norm(vector)
-    length = max([l, w])
-    width = min([l, w])
+    vector_norm = np.linalg.norm(vector)
+    vector = vector / vector_norm
+    lw = (vector_norm * (xr * abs(vector[0]) - yr * abs(vector[1])) / (vector[0]**2 - vector[1] ** 2),
+          vector_norm * (xr * abs(vector[1]) - yr * abs(vector[0])) / (vector[1]**2 - vector[0] ** 2))
+    length = max(lw)
+    width = min(lw)
     vector_p = np.array([vector[1], -vector[0]])
 
     a = center + length * vector / 2 + width * vector_p / 2
@@ -297,6 +300,7 @@ def rectangle_np(center, vector, l, w):
 
     return a, b, c, d
 
+
 def xywhrot2corners(predictions):
     '''
 
@@ -304,28 +308,34 @@ def xywhrot2corners(predictions):
     :return:
     '''
     corners = []
+    scale = 800 / 416
     for pred in predictions:
         xc, yc, w, h, rot_x, rot_y = pred.cpu().numpy()
+        # prediction was normalize to the image size not output size
+        # here change it to the scale of dimension 800
+        xc, yc, w, h = xc * scale, yc * scale, w * scale, h * scale
         center = np.array([xc, yc])
         direction = np.array([rot_x, rot_y])
-        cor1, cor2, cor3, cor4  = rectangle_np(center, direction, h * 2, w * 2)
+        cor1, cor2, cor3, cor4 = rectangle_np(center, direction, h, w)
         corner = np.stack([cor1, cor2, cor3, cor4]).T
         corners.append(corner)
     return np.stack(corners)
 
 
 
-def nms_with_rot(prediction, conf_thres=0.5, nms_thres=0.4):
+def nms_with_rot(prediction, conf_thres=0.5, nms_thres=0.4, extra=None):
     """
     Removes detections with lower object confidence score than 'conf_thres' and performs
     Non-Maximum Suppression to further filter detections.
     Returns detections with shape:
-        (x1, y1, x2, y2, object_conf, x_dir, y_dir, class_score, class_pred)
+        tensor([2,4]) that has x, y for 4 corners
     """
 
     # From (center x, center y, width, height) to (x1, y1, x2, y2)
     output = [None for _ in range(len(prediction))]
-    for image_i, image_pred in enumerate(prediction):
+    if extra == None:
+        extra = [None for _ in range(len(prediction))]
+    for image_i, (image_pred, meta_info) in enumerate(zip(prediction, extra)):
         # Filter out confidence scores below threshold
         image_pred = image_pred[image_pred[:, 6] >= conf_thres]
         # If none are remaining => process next image
@@ -339,28 +349,43 @@ def nms_with_rot(prediction, conf_thres=0.5, nms_thres=0.4):
         # get bounding box
         #print('filter by confidence', image_pred.shape)
         bbox = xywhrot2corners(image_pred[:, :6])
-        #print(bbox.shape)
-        detections = torch.cat((image_pred[:, :6], class_confs.float(), class_preds.float()), 1)
         # Perform non-maximum suppression
         num_boxes = bbox.shape[0]
         keep_boxes = [True for i in range(num_boxes)]
-
+        if meta_info:
+            fig, ax = plt.subplots(1, 1)
         for i in range(num_boxes):
             if not keep_boxes[i]:
                 continue
-            score = image_pred[i, 6]
+            box1 = bbox[i]
+            if meta_info:
+                box1plot = Polygon(box1.T)
+
+                x, y = box1plot.convex_hull.exterior.xy
+                ax.plot(x, y)
             for j in range(i + 1, num_boxes):
                 if keep_boxes[j]:
-                    box1 = bbox[i]
                     box2 = bbox[j]
-                    box1 = Polygon(box1.T).convex_hull
-                    box2 = Polygon(box2.T).convex_hull
-                    iou = box1.intersection(box2).area / box1.union(box2).area
+                    box_to_keep = Polygon(box1.T)
+                    box2 = Polygon(box2.T)
+                    if meta_info:
+                        x, y = box2.convex_hull.exterior.xy
+                        ax.plot(x, y)
+                    box_to_keep = box_to_keep.convex_hull
+                    box2 = box2.convex_hull
+                    iou = box_to_keep.intersection(box2).area / box_to_keep.union(box2).area
+                    # print(box1.shape, box2.shape, iou)
                     if iou > nms_thres:
                         keep_boxes[j] = False
-
+        if meta_info:
+            ax.plot(400, 400, 'x')
+            ax.set_xlim(0, 800)
+            ax.set_ylim(0, 800)
+            plt.savefig('../debug/{}_{}.png'.format(meta_info['scene_id'], meta_info['sample_id']))
+            plt.close()
         bbox = bbox[keep_boxes]
         output[image_i] = torch.tensor(bbox)
+        print('NMS change number of box from {} to {}'.format(num_boxes, bbox.shape[0]))
     return output
 
 
