@@ -82,7 +82,7 @@ class ModelLoader():
                 loss += layer_loss
             detections = to_cpu(torch.cat(detections, 1))
             #print('average/max conf:', detections[:, :, 6].mean().item(), detections[:, :, 6].max().item())
-            detections = nms_with_rot(detections, 0.5, 0)
+            detections = nms_with_rot(detections, 0.7, 0)
         return torch.stack(detections)
 
     def get_binary_road_map(self, samples):

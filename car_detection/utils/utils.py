@@ -352,7 +352,8 @@ def nms_with_rot(prediction, conf_thres=0.5, nms_thres=0.4, extra=None):
         # Perform non-maximum suppression
         num_boxes = bbox.shape[0]
         keep_boxes = [True for i in range(num_boxes)]
-        fig, ax = plt.subplots(1, 1)
+        if meta_info:
+            fig, ax = plt.subplots(1, 1)
         for i in range(num_boxes):
             if not keep_boxes[i]:
                 continue
@@ -376,11 +377,12 @@ def nms_with_rot(prediction, conf_thres=0.5, nms_thres=0.4, extra=None):
                     # print(box1.shape, box2.shape, iou)
                     if iou > nms_thres:
                         keep_boxes[j] = False
-        ax.plot(400, 400, 'x')
-        ax.set_xlim(0, 800)
-        ax.set_ylim(0, 800)
-        plt.savefig('../debug/{}_{}.png'.format(meta_info['scene_id'], meta_info['sample_id']))
-        plt.close()
+        if meta_info:
+            ax.plot(400, 400, 'x')
+            ax.set_xlim(0, 800)
+            ax.set_ylim(0, 800)
+            plt.savefig('../debug/{}_{}.png'.format(meta_info['scene_id'], meta_info['sample_id']))
+            plt.close()
         bbox = bbox[keep_boxes]
         output[image_i] = torch.tensor(bbox)
         print('NMS change number of box from {} to {}'.format(num_boxes, bbox.shape[0]))
