@@ -396,7 +396,7 @@ def build_targets(pred_boxes, pred_cls, target, anchors, ignore_thres):
 
     nB = pred_boxes.size(0)
     nA = pred_boxes.size(1)
-    nC = pred_cls.size(-1)
+    nC = pred_cls.size(-1) if pred_cls is not None else 0
     nG = pred_boxes.size(2)
 
     # Output tensors
@@ -410,7 +410,10 @@ def build_targets(pred_boxes, pred_cls, target, anchors, ignore_thres):
     th = FloatTensor(nB, nA, nG, nG).fill_(0)
     txdir = FloatTensor(nB, nA, nG, nG).fill_(0)
     tydir = FloatTensor(nB, nA, nG, nG).fill_(0)
-    tcls = FloatTensor(nB, nA, nG, nG, nC).fill_(0)
+    if nC != 0:
+        tcls = FloatTensor(nB, nA, nG, nG, nC).fill_(0)
+    else:
+        tcls = None
 
     # Convert to position relative to box
     target_boxes = target[:, 2: 6].float() * nG
@@ -445,10 +448,11 @@ def build_targets(pred_boxes, pred_cls, target, anchors, ignore_thres):
     # rotation
     txdir[b, best_n, gj, gi] = gxdir.float()
     tydir[b, best_n, gj, gi] = gydir.float()
-    # One-hot encoding of label
-    tcls[b, best_n, gj, gi, target_labels] = 1
-    # Compute label correctness and iou at best anchor
-    class_mask[b, best_n, gj, gi] = (pred_cls[b, best_n, gj, gi].argmax(-1) == target_labels).float()
+    if tcls is not None:
+        # One-hot encoding of label
+        tcls[b, best_n, gj, gi, target_labels] = 1
+        # Compute label correctness and iou at best anchor
+        class_mask[b, best_n, gj, gi] = (pred_cls[b, best_n, gj, gi].argmax(-1) == target_labels).float()
     iou_scores[b, best_n, gj, gi] = bbox_iou(pred_boxes[b, best_n, gj, gi], target_boxes, x1y1x2y2=False)
 
     tconf = obj_mask.float()

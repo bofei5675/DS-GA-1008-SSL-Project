@@ -132,7 +132,7 @@ def setup(args = None):
                                                 shuffle=True,
                                                 num_workers=2,
                                                 collate_fn=collate_fn2)
-        model = pix2vox(args.pre_train).to(device)
+        model = pix2vox(args.pre_train, args.det, args.seg).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     return model, optimizer, trainloader, valloader
 
@@ -311,18 +311,24 @@ def train_yolov3_pass_6(model, optimizer, trainloader, valloader, args):
     f.close()
 
 
-
-def train_pix2vox_yolo(model, optimizer, trainloader, valloader, args):
-    if not os.path.exists('runs'):
-        os.mkdir('runs')
+def build_model_dir(args):
+    if not os.path.exists('./runs'):
+        os.mkdir('./runs')
     model_name = time.strftime("%Y-%m-%d_%H-%M-%S", time.gmtime())
-    model_name = 'yolov3' + '_' + model_name
-    if not os.path.exists('runs/' + model_name):
-        os.mkdir('runs/' + model_name)
-        with open('runs/' + model_name + '/config.txt', 'w') as f:
+    model_name += '_det' if args.det else ''
+    model_name += '_seg' if args.seg else ''
+    model_name += '_pt' if args.pre_train else ''
+    model_name = 'p2v_yolo' + '_' + model_name
+    if not os.path.exists('./runs/' + model_name):
+        os.mkdir('./runs/' + model_name)
+        with open('./runs/' + model_name + '/config.txt', 'w') as f:
             f.write(str(args))
         print(f'New directory {model_name} created')
+    return model_name
 
+
+def train_pix2vox_yolo(model, optimizer, trainloader, valloader, args):
+    model_name = build_model_dir(args)
     save_dir = os.path.join('./runs', model_name)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model_file = open(save_dir + '/model_arch.txt', 'w')
@@ -349,11 +355,6 @@ def train_pix2vox_yolo(model, optimizer, trainloader, valloader, args):
                 "conf": 0,
                 'conf_obj':0,
                 'conf_noobj':0,
-                "cls": 0,
-                "cls_acc": 0,
-                'precision':0,
-                'recall50':0,
-                'recall75':0,
                 'rotation':0,
                 'road_map_acc': 0
             }
@@ -370,16 +371,23 @@ def train_pix2vox_yolo(model, optimizer, trainloader, valloader, args):
 
                 with torch.set_grad_enabled(phase == 'train'):
                     road_outputs, yolo_outputs  = model(sample)
-                    road_outputs = road_outputs.squeeze(dim=1)
                     # compute loss
-                    output, yolo_loss, metrics = yolo_criterion(yolo_outputs, target, 416)
-                    lane_map_loss = lanemap_criterion(road_outputs, road_image)
-                    lane_map_pred = torch.sigmoid(road_outputs)
-                    lane_map_mask = (lane_map_pred > 0.5).detach().cpu().numpy()
-                    road_image = road_image.cpu().numpy()
-                    road_image_acc = (lane_map_mask == road_image).sum() / (args.batch_size * 800 * 800)
+                    if args.det:
+                        output, yolo_loss, metrics = yolo_criterion(yolo_outputs, target, 416)
+                    else:
+                        output, yolo_loss, metrics = None, torch.tensor(0, device=device), {}
+                    if args.seg:
+                        lane_map_loss = lanemap_criterion(road_outputs, road_image)
+                        lane_map_pred = torch.sigmoid(road_outputs)
+                        lane_map_mask = (lane_map_pred > 0.5).detach().cpu().numpy()
+                        road_image = road_image.cpu().numpy()
+                        road_image_acc = (lane_map_mask == road_image).sum() / (args.batch_size * 800 * 800)
+                    else:
+                        road_image_acc = 0
+                        lane_map_loss = torch.tensor(0, device=device)
+
                     for key in metrics_epoch:
-                        if key != 'road_map_acc':
+                        if key != 'road_map_acc' and key in metrics:
                             metrics_epoch[key] += metrics[key]
                         else:
                             metrics_epoch[key] += road_image_acc

@@ -15,7 +15,7 @@ def build_yolo():
     image_height = 416
     mask = '0,1,2'
     anchors = '10, 13, 16, 30, 33, 23, 30, 61, 62, 45, 59, 119, 116, 90, 156, 198, 373, 326'
-    classes = 9
+    classes = 0
     anchor_idxs = [int(x) for x in mask.split(",")]
     # Extract anchors
     anchors = [int(x) for x in anchors.split(",")]
@@ -199,8 +199,10 @@ class YOLOLayer(nn.Module):
         pred_rotation = torch.tanh(prediction[..., 5: 7])# pred rotation
         xdir = pred_rotation[..., 0]
         ydir = pred_rotation[..., 1]
-        pred_cls = torch.sigmoid(prediction[..., 7:])  # Cls pred.
-
+        if self.num_classes > 0:
+            pred_cls = torch.sigmoid(prediction[..., 7:])  # Cls pred.
+        else:
+            pred_cls = None
         # If grid size does not match current we compute new offsets
         if grid_size1 != self.grid_size:
             self.compute_grid_offsets(grid_size1, cuda=x.is_cuda)
@@ -214,15 +216,23 @@ class YOLOLayer(nn.Module):
         pred_boxes[..., 4:] = pred_rotation
         # print('stride ???', self.stride)
         pred_boxes[..., :4] = pred_boxes[..., :4] * self.stride
-        output = torch.cat(
-            (
-                pred_boxes.view(num_samples, -1, 6),
-                pred_conf.view(num_samples, -1, 1),
-                pred_cls.view(num_samples, -1, self.num_classes),
-            ),
-            -1,
-        )
-
+        if self.num_classes > 0:
+            output = torch.cat(
+                (
+                    pred_boxes.view(num_samples, -1, 6),
+                    pred_conf.view(num_samples, -1, 1),
+                    pred_cls.view(num_samples, -1, self.num_classes),
+                ),
+                -1,
+            )
+        else:
+            output = torch.cat(
+                (
+                    pred_boxes.view(num_samples, -1, 6),
+                    pred_conf.view(num_samples, -1, 1),
+                ),
+                -1,
+            )
         if targets is None:
             return output, 0, {}
         else:
@@ -246,7 +256,7 @@ def bce_loss(pred_conf, tconf, weights=(1,1),reduction='mean'):
         return loss.mean()
     return loss.sum()
 
-def focal_loss(pred_conf, tconf, weights=(1,1), alpha=1, reduction='mean'):
+def focal_loss(pred_conf, tconf, weights=(1,1), alpha=2, reduction='mean'):
     focal_weights = [(pred_conf) ** alpha, (1 - pred_conf) ** alpha]
     loss = weights[1] * tconf *  focal_weights[1] *- torch.log(pred_conf + 1e-8) +\
            weights[0] * focal_weights[0] *(1 - tconf) * -torch.log(1-pred_conf + 1e-8)
@@ -264,7 +274,7 @@ def yolo_loss(x, y, w, h, xdir, ydir, pred_boxes, pred_conf, pred_cls, targets, 
         anchors=scaled_anchors,
         ignore_thres=ignore_thres,
     )
-
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     # Loss : Mask outputs to ignore non-existing objects (except with conf. loss)
     loss_x = reg_criterion(x[obj_mask], tx[obj_mask])
     loss_y = reg_criterion(y[obj_mask], ty[obj_mask])
@@ -274,14 +284,21 @@ def yolo_loss(x, y, w, h, xdir, ydir, pred_boxes, pred_conf, pred_cls, targets, 
     loss_xdir = reg_criterion(xdir[obj_mask], txdir[obj_mask])
     loss_ydir = reg_criterion(ydir[obj_mask], tydir[obj_mask])
     weights = (noobj_scale, obj_scale)
-    loss_conf = bce_loss(pred_conf, tconf, weights)
+    loss_conf = focal_loss(pred_conf, tconf, weights)
     #print(obj_scale, '*', loss_conf_obj, '+', noobj_scale, '*', loss_conf_noobj )
-    loss_cls = clf_criterion(pred_cls[obj_mask], tcls[obj_mask])
+    if pred_cls is not None:
+        loss_cls = clf_criterion(pred_cls[obj_mask], tcls[obj_mask])
+    else:
+        loss_cls = torch.tensor(0, device=device)
+
     total_loss = regr_weights * (loss_x + loss_y + loss_w + loss_h + loss_xdir + loss_ydir) +\
                  loss_conf + loss_cls
 
     # Metrics
-    cls_acc = 100 * class_mask[obj_mask].mean()
+    if loss_cls == 0:
+        cls_acc = torch.tensor(0, device=device)
+    else:
+        cls_acc = 100 * class_mask[obj_mask].mean()
     conf_obj = pred_conf[obj_mask].mean()
     conf_noobj = pred_conf[noobj_mask].mean()
     conf50 = (pred_conf > 0.5).float()
