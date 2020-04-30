@@ -14,14 +14,16 @@ class Args:
     weight_decay = 10e-6
 
     # adjust_batch_size
-    batch_size = 10
+    batch_size = 4
     device = 'cuda'
     epochs = 80
 
-    data_dir = '../data'
-    log_dir = '../runs/logs'
-    mdl_dir = '../runs/bestmodels'
-    scripts_dir = '../runs/scripts'
+    data_dir = 'data/'
+    log_dir = 'runs/logs'
+    mdl_dir = 'runs/bestmodels'
+    scripts_dir = 'runs/scripts'
+    configs = 'default'
     eval_every_n_epochs = 1
-    log_every_n_steps = 30
-    pre_train=False
+    log_every_n_steps = 3
+    continue_train = True
+    lr = 5e-4

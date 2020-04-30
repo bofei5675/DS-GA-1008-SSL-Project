@@ -16,7 +16,7 @@ class CPC_train(object):
     def __init__(self, args):
         self.args = args
         self._get_batch_size(args)
-        print(f'batch_size adjusted to : {args.batch_size}')
+        print(f'batch_size adjusted to : {self.args.batch_size}')
         self.device = args.device
         self.criterion = CPCLoss(args)
         self.dataset = DataSetWrapper(args, num_workers=0, s=1)
@@ -26,35 +26,37 @@ class CPC_train(object):
         device_name = torch.cuda.get_device_name()
         if 'K80' in device_name:
             if n_gpu > 1:
-                args.batch_size = n_gpu * 8 + 4
+                args.batch_size = n_gpu * 3
             else:
-                args.batch_size = 10
+                args.batch_size = 4
 
     def _step(self, model, x, y):
-        y = model.encode_fixed(y)
+        # y = model.encode_fixed(y)
+        y = model.encode(y)
         y = F.normalize(y, dim=2)
 
         y_hat = model(x)
         y_hat = F.normalize(y_hat, dim=2)
 
-        x = model.encode_fixed(x)
+        # x = model.encode_fixed(x)
+        x = model.encode(x)
         x = F.normalize(x, dim=2)
         loss = self.criterion(x, y_hat, y)
 
         return loss
 
     def _load_pre_trained_weights(self, model, args):
-        if args.pre_train:
+        if args.continue_train:
             try:
-                state_dict = torch.load(os.path.join(self.args.mdl_dir, 'model.pth'))
+                state_dict = torch.load(os.path.join(self.args.mdl_dir, f'model-{self.args.configs}.pth'))
                 model.load_state_dict(state_dict)
                 print("\nLoaded pre-trained model with success.")
-                with open(self.args.log_dir + '/config.txt', 'a') as f:
+                with open(self.args.log_dir + f'/config-{self.args.configs}.txt', 'a') as f:
                     f.write("\nLoaded pre-trained model with success.")
 
             except FileNotFoundError:
                 print("\nPre-trained weights not found. Training from scratch.")
-                with open(self.args.log_dir + '/config.txt', 'a') as f:
+                with open(self.args.log_dir + f'/config-{self.args.configs}.txt', 'a') as f:
                     f.write("\nPre-trained weights not found. Training from scratch.")
 
         return model
@@ -101,14 +103,14 @@ class CPC_train(object):
                 if n_iter % self.args.log_every_n_steps == 0:
                     time_cost = (time.time() - start_time) / 60
                     time_left = (time_cost / (iteration + 1)) * len(train_loader)
-                    info = "\n====> Cur_iter: [{}]: Epoch[{}]({}/{}): time cost: {:4.4f} m: time left: {:4.4f} m: ".format(
+                    info = "\n====> Cur_iter: [{}]: Epoch[{}]({}/{}): time cost: {:4.4f} m: time total: {:4.4f} m: ".format(
                         n_iter, epoch_counter,
                         iteration,
                         len(train_loader),
                         time_cost, time_left)
 
                     info += 'Train Loss: {:.4f},'.format(loss.item())
-                    with open(self.args.log_dir + '/config.txt', 'a') as f:
+                    with open(self.args.log_dir + f'/config-{self.args.configs}.txt', 'a') as f:
                         f.write(info)
                     print(info)
 
@@ -131,7 +133,7 @@ class CPC_train(object):
                                                                                                          time.time() - start_time) / 60)
 
                 info += 'Valid Loss: {:.4f}'.format(valid_loss)
-                with open(self.args.log_dir + '/config.txt', 'a') as f:
+                with open(self.args.log_dir + f'/config-{self.args.configs}.txt', 'a') as f:
                     f.write(info)
                 print(info)
 
@@ -139,13 +141,13 @@ class CPC_train(object):
                     best_valid_loss = valid_loss
 
                 info = "\n====> Saving Best Model."
-                with open(self.args.log_dir + '/config.txt', 'a') as f:
+                with open(self.args.log_dir + f'/config-{self.args.configs}.txt', 'a') as f:
                     f.write(info)
-                torch.save(model.state_dict(), os.path.join(self.args.mdl_dir, 'model.pth'))
+                torch.save(model.state_dict(), os.path.join(self.args.mdl_dir, f'model-{self.args.configs}.pth'))
 
                 valid_n_iter += 1
 
-            if epoch_counter >= 10:
+            if epoch_counter >= 3:
                 scheduler.step()
 
                 info = "\n====> Cur_iter: [{}]: Epoch[{}]({}/{}): time: {:4.4f}: m".format(n_iter, epoch_counter,
@@ -155,6 +157,6 @@ class CPC_train(object):
                                                                                                    time.time() - start_time) / 60)
 
                 info += 'Change Learning Rate: {:.4f},'.format(scheduler.get_lr()[0])
-                with open(self.args.log_dir + '/config.txt', 'a') as f:
+                with open(self.args.log_dir + f'/config-{self.args.configs}.txt', 'a') as f:
                     f.write(info)
                 print(info)

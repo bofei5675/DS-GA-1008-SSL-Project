@@ -144,4 +144,5 @@ gym_bs/envs/__pycache__/
 models/__pycache__/
 
 competition/
-ssl/data
+self_supervised/data
+self_supervised/runs
