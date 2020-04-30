@@ -21,6 +21,11 @@ parser.add_argument('-pt', '--pre-train', dest='pre_train',
                     type=str2bool, default='no')
 parser.add_argument('-dm', '--demo', dest='demo',
                     type=str2bool, default='no')
+parser.add_argument('-det', '--detection', dest='det',
+                    type=str2bool, default='yes')
+parser.add_argument('-seg', '--segmentation', dest='seg',
+                    type=str2bool, default='yes')
+
 args = parser.parse_args()
 
 if __name__ == '__main__':

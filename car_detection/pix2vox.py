@@ -257,58 +257,68 @@ class Refiner(torch.nn.Module):
 
 
 class Mapper(torch.nn.Module):
-    def __init__(self, cfg):
+    def __init__(self, cfg, det, seg):
         super(Mapper, self).__init__()
         self.cfg = cfg
-        self.lane_map_branch = torch.nn.Sequential(
-            torch.nn.Conv2d(32, 8, kernel_size=9, padding=1),
-            torch.nn.BatchNorm2d(8),
-            torch.nn.ReLU(0.2),
-            torch.nn.ConvTranspose2d(8, 8, kernel_size=4, stride=4, bias=True, padding=1),
-            torch.nn.BatchNorm2d(8),
-            torch.nn.ReLU(),
+        self.det = det
+        self.seg = seg
+        if self.seg:
+            self.lane_map_branch = torch.nn.Sequential(
+                torch.nn.Conv2d(32, 8, kernel_size=9, padding=1),
+                torch.nn.BatchNorm2d(8),
+                torch.nn.ReLU(0.2),
+                torch.nn.ConvTranspose2d(8, 8, kernel_size=4, stride=4, bias=True, padding=1),
+                torch.nn.BatchNorm2d(8),
+                torch.nn.ReLU(),
 
-            torch.nn.ConvTranspose2d(8, 8, kernel_size=2, stride=2, bias=True, padding=1),
-            torch.nn.BatchNorm2d(8),
-            torch.nn.ReLU(),
+                torch.nn.ConvTranspose2d(8, 8, kernel_size=2, stride=2, bias=True, padding=1),
+                torch.nn.BatchNorm2d(8),
+                torch.nn.ReLU(),
 
-            torch.nn.ConvTranspose2d(8, 4, kernel_size=2, stride=2, bias=True, padding=1),
-            torch.nn.BatchNorm2d(4),
-            torch.nn.ReLU(),
+                torch.nn.ConvTranspose2d(8, 4, kernel_size=2, stride=2, bias=True, padding=1),
+                torch.nn.BatchNorm2d(4),
+                torch.nn.ReLU(),
 
-            torch.nn.ConvTranspose2d(4, 4, kernel_size=2, stride=2, bias=True, padding=2),
-            torch.nn.BatchNorm2d(4),
-            torch.nn.ReLU(),
+                torch.nn.ConvTranspose2d(4, 4, kernel_size=2, stride=2, bias=True, padding=2),
+                torch.nn.BatchNorm2d(4),
+                torch.nn.ReLU(),
 
-            torch.nn.Conv2d(4, 1, kernel_size=1, padding=0),
-            torch.nn.BatchNorm2d(1),
-            torch.nn.ReLU(0.2)
-        )
-
-        self.yolo_branch = torch.nn.Sequential(
-            torch.nn.Conv2d(32, 128, kernel_size=9, padding=1),
-            torch.nn.BatchNorm2d(128),
-            torch.nn.ReLU(0.2),
-            torch.nn.ConvTranspose2d(128, 48, kernel_size=4, stride=2, bias=True, padding=1),
-        )
+                torch.nn.Conv2d(4, 1, kernel_size=1, padding=0),
+                torch.nn.BatchNorm2d(1),
+                torch.nn.ReLU(0.2)
+            )
+        if self.det:
+            self.yolo_branch = torch.nn.Sequential(
+                torch.nn.Conv2d(32, 128, kernel_size=9, padding=1),
+                torch.nn.BatchNorm2d(128),
+                torch.nn.ReLU(0.2),
+                torch.nn.ConvTranspose2d(128, 21, kernel_size=4, stride=2, bias=True, padding=1),
+            )
 
     def forward(self, volumes):
-        lane_map_logit = self.lane_map_branch(volumes)
-        yolo_logit = self.yolo_branch(volumes)
-        print(lane_map_logit.shape, yolo_logit.shape)
+        if self.seg:
+            lane_map_logit = self.lane_map_branch(volumes)
+            lane_map_logit = lane_map_logit.squeeze(dim=1)
+        else:
+            lane_map_logit = None
+        if self.det:
+            yolo_logit = self.yolo_branch(volumes)
+        else:
+            yolo_logit = None
         return lane_map_logit, yolo_logit
 
 
 class pix2vox(torch.nn.Module):
-    def __init__(self, pretrained=True):
+    def __init__(self, pretrained=True, det=True, seg=True):
         super(pix2vox, self).__init__()
         self.cfg = None
+        self.det = det
+        self.seg = seg
         self.encoder = Encoder(self.cfg, pretrained=pretrained)
         self.decoder = Decoder(self.cfg)
         self.merger = Merger(self.cfg)
         self.refiner = Refiner(self.cfg)
-        self.mapper = Mapper(self.cfg)
-
+        self.mapper = Mapper(self.cfg, self.det, self.seg)
         self.init_weights()
 
     def forward(self, inputs):
