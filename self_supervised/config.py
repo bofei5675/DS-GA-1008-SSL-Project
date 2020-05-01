@@ -3,7 +3,7 @@ class Args:
     encoder_model = 'LSTM'
     decoder_model = 'LSTM'
     embed_size = 128
-    rnn_hidden_size = 64
+    rnn_hidden_size = 128
     output_size = 128
     rnn_n_layers = 2
     rnn_seq_len = 3
@@ -26,4 +26,4 @@ class Args:
     eval_every_n_epochs = 1
     log_every_n_steps = 3
     continue_train = True
-    lr = 5e-4
+    lr = 3e-4

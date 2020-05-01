@@ -132,13 +132,15 @@ class Seq2seq(nn.Module):
             if self.decoder_model == 'LSTM':
                 decoder_hidden = (
                     self.rnn_lr(encoder_hidden[0].transpose_(0, 1).reshape(batch_size, -1))
-                        .reshape(batch_size, -1, self.output_dim).transpose_(0, 1)
+                        .reshape(batch_size, -1, self.output_dim).transpose_(0, 1),
                     self.rnn_lr(encoder_hidden[1].transpose_(0, 1).reshape(batch_size, -1))
-                        .reshape(batch_size, -1, self.output_dim).transpose_(0, 1)
+                        .reshape(batch_size, -1, self.output_dim).transpose_(0, 1))
 
             else:
-                decoder_hidden = self.rnn_lr(encoder_hidden.transpose_(0, 1).reshape(batch_size, -1))
-                decoder_hidden = decoder_hidden.reshape(batch_size, -1, self.output_dim).transpose_(0, 1)
+                decoder_hidden = self.rnn_lr(encoder_hidden.transpose_(0, 1).reshape(batch_size, -1)).contiguous()
+                decoder_hidden = decoder_hidden.reshape(batch_size, -1, self.output_dim).transpose_(0, 1).contiguous()
+        else:
+            decoder_hidden = encoder_hidden
 
         decoder_outputs = torch.zeros(
             self.seq_len, batch_size, self.output_dim, device=self.device)
