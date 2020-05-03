@@ -20,13 +20,13 @@ from matplotlib.ticker import NullLocator
 import pandas as pd
 from tqdm import tqdm
 import os
-from pix2vox import pix2vox
+from pix2vox import pix2vox_seg
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-bs', '--batch-size', dest='batch_size', default=4, type=int)
 parser.add_argument('-lm', '--load-model',
                     dest='load_model',
-                    default='/scratch/bz1030/data_ds_1008/detection/roadmap-segmentation/runs/pix2vox_2020-04-26_00-29-58/best-model-6.pth',
+                    default='/scratch/bz1030/data_ds_1008/detection/roadmap_segmentation/runs/pix2vox_2020-04-26_01-18-51/best-model-15.pth',
                     type=str)
 parser.add_argument('-th', '--threshold', dest='threshold', default=0.5, type=float)
 parser.add_argument('-m', '--model', dest='model', default='pix2vox', type=str,
@@ -42,7 +42,7 @@ device = torch.device("cuda" if  use_cuda else "cpu")
 if args.model == 'unet':
     model = UNet(3, 1).to(device)
 elif args.model == 'pix2vox':
-    model = pix2vox().to(device)
+    model = pix2vox_seg().to(device)
 save_dir = args.load_model.split('/')
 save_dir = '/'.join(save_dir[:-1])
 save_dir += '/eval_fig'
@@ -75,7 +75,7 @@ for idx, (sample, target, road_image, extra) in enumerate(valloader):
             outputs = torch.cat(outputs, dim=1)
             outputs = model.mapping(outputs).squeeze(dim=1)
         elif args.model == 'pix2vox':
-            outputs = model(sample).squeeze(dim=1)
+            outputs = model(sample)
         # compute loss
         loss = criterion(outputs, target)
         prob = torch.sigmoid(outputs)

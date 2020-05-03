@@ -329,6 +329,8 @@ def nms_with_rot(prediction, conf_thres=0.5, nms_thres=0.4, extra=None):
     Non-Maximum Suppression to further filter detections.
     Returns detections with shape:
         tensor([2,4]) that has x, y for 4 corners
+    Inputs:
+        prediction numpy array
     """
 
     # From (center x, center y, width, height) to (x1, y1, x2, y2)
@@ -337,6 +339,9 @@ def nms_with_rot(prediction, conf_thres=0.5, nms_thres=0.4, extra=None):
         extra = [None for _ in range(len(prediction))]
     for image_i, (image_pred, meta_info) in enumerate(zip(prediction, extra)):
         # Filter out confidence scores below threshold
+        #print('Score range: {}-{};  mean:{}'.format(image_pred[:, 6].min(),
+         #                                           image_pred[:, 6].max(),
+         #                                           image_pred[:, 6].mean()))
         image_pred = image_pred[image_pred[:, 6] >= conf_thres]
         # If none are remaining => process next image
         if image_pred.shape[0] <= 0:
@@ -345,7 +350,7 @@ def nms_with_rot(prediction, conf_thres=0.5, nms_thres=0.4, extra=None):
         score = image_pred[:, 6]
         # Sort by it
         image_pred = image_pred[(-score).argsort()]
-        class_confs, class_preds = image_pred[:, 7:].max(1, keepdim=True)
+        # class_confs, class_preds = image_pred[:, 7:].max(1, keepdim=True)
         # get bounding box
         #print('filter by confidence', image_pred.shape)
         bbox = xywhrot2corners(image_pred[:, :6])

@@ -21,6 +21,8 @@ torch.backends.cudnn.benchmark = False
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data_dir', type=str, default='../DLSP20Dataset/data')
+parser.add_argument('--det_model', type=str, default=None)
+parser.add_argument('--seg_model', type=str, default=None)
 parser.add_argument('--testset', action='store_true')
 parser.add_argument('--verbose', action='store_true')
 parser.add_argument('--debug', action='store_true')
@@ -32,7 +34,7 @@ annotation_csv = f'{opt.data_dir}/annotation.csv'
 if opt.testset:
     labeled_scene_index = np.arange(134, 148)
 else:
-    labeled_scene_index = np.arange(120, 134)
+    labeled_scene_index = np.arange(130, 134)
 
 labeled_trainset = LabeledDataset(
     image_folder=image_folder,
@@ -48,12 +50,15 @@ dataloader = torch.utils.data.DataLoader(
     num_workers=4
     )
 bar = tqdm(total=len(dataloader), desc='Processing', ncols=90)
-model_loader = ModelLoader()
+
+model_loader = ModelLoader(detection_model=opt.det_model,
+                           segmentation_model=opt.seg_model)
 
 total = 0
 total_ats_bounding_boxes = 0
 total_ts_road_map = 0
 bar = tqdm(total=len(dataloader), desc='Processing', ncols=90)
+
 for i, data in enumerate(dataloader):
     total += 1
     sample, target, road_image, extra = data
@@ -71,7 +76,8 @@ for i, data in enumerate(dataloader):
     if opt.verbose:
         print(f'{i} - Bounding Box Score: {ats_bounding_boxes:.4} - Road Map Score: {ts_road_map:.4}')
     if opt.debug:
-        fig, ax = plt.subplots(dpi=300)
+        # draw bbox
+        fig, ax = plt.subplots()
 
         # The ego car position
         ax.grid()
@@ -88,18 +94,34 @@ for i, data in enumerate(dataloader):
 
         ax.set_xlim(0, 800)
         ax.set_ylim(0, 800)
-        plt.savefig('./debug/{}_{}.png'.format(extra['scene_id'].item(), extra['sample_id'].item()))
+        ax.set_title('blue=Target; orange=Prediction')
+        plt.savefig(
+            '{}/debug_det/{}_{}.png'.format(model_loader.debug_det, extra['scene_id'].item(), extra['sample_id'].item()))
         plt.close()
 
-
-
+        # draw lanemap
+        fig, ax = plt.subplots(1, 2)
+        # print(road_image.cpu().numpy().shape, predicted_road_map.cpu().numpy().shape)
+        target_mask, pred_mask = road_image.cpu().numpy()[0], predicted_road_map.cpu().numpy()[0]
+        ax[0].imshow(target_mask)
+        ax[1].imshow(pred_mask)
+        # The ego car position
+        ax[1].set_title('Pred Score:{}'.format(ts_road_map))
+        plt.tight_layout()
+        plt.savefig(
+            '{}/debug_seg/{}_{}.png'.format(model_loader.debug_seg,extra['scene_id'].item(), extra['sample_id'].item()))
+        plt.close()
 
 print(f'{model_loader.team_name} - {model_loader.round_number} - Bounding Box Score: {total_ats_bounding_boxes / total:.4} - Road Map Score: {total_ts_road_map / total:.4}')
     
+avg_det_score =  total_ats_bounding_boxes / total
+avg_seg_score = total_ts_road_map / total
 
+with open(model_loader.debug_det +'/eval.txt', 'w') as f:
+    f.write('Detection threat score: {}'.format(avg_det_score))
 
-
-
+with open(model_loader.debug_seg +'/eval.txt', 'w') as f:
+    f.write('Detection threat score: {}'.format(avg_seg_score))
 
 
 
