@@ -8,9 +8,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
 from torchvision import transforms
-from car_detection.models import Darknet
+from car_detection.models import build_yolo
 from car_detection.utils.utils import non_max_suppression, to_cpu, nms_with_rot
-from roadmap_segmentation.pix2vox import pix2vox
+from car_detection.pix2vox import pix2vox
 # import your model class
 # import ...
 
@@ -25,13 +25,13 @@ class ModelLoader():
     # Fill the information for your team
     team_name = 'some name'
     round_number = 1
-    team_member = ['Bofei Zhang', 'Cui Can', 'Yuanxi Sun']
+    team_member = ['Bofei Zhang', 'Can Cui', 'Yuanxi Sun']
     contact_email = 'bz1030@nyu.edu'
 
-    def __init__(self, detection_model='./model_weights/best-model-yolo.pth',
+    def __init__(self, detection_model='./car_detection/runs/p2v_yolo_2020-04-30_11-53-15_det_pt/best-model-3.pth',
                  segmentation_model='./model_weights/best-model-pix2vox.pth'):
-        self.model_detection = Darknet('./car_detection/config/yolov3.cfg', 416)
-        self.model_segmentation = pix2vox()
+        self.model_detection = pix2vox(det=True, seg=False)
+        self.model_segmentation = pix2vox(det=False, seg=True)
         self.use_cuda = torch.cuda.is_available()
         self.device = torch.device('cuda' if self.use_cuda else 'cpu')
         if self.use_cuda:
@@ -41,11 +41,13 @@ class ModelLoader():
             self.model_detection.load_state_dict(state_dict1)
             self.model_segmentation.cuda()
             self.model_segmentation.load_state_dict(state_dict2)
+            self.yolo = build_yolo()
         else:
             state_dict1 = torch.load(detection_model)
             state_dict2 = torch.load(segmentation_model)
             self.model_detection.load_state_dict(state_dict1, map_location='cpu')
             self.model_segmentation.load_state_dict(state_dict2, map_location='cpu')
+            self.yolo = build_yolo()
         self.model_segmentation.eval()
         self.model_detection.eval()
 

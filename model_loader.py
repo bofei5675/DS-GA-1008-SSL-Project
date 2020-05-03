@@ -8,9 +8,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
 from torchvision import transforms
-from car_detection.models import Darknet
-from car_detection.utils.utils import non_max_suppression, to_cpu, nms_with_rot
-from roadmap_segmentation.pix2vox import pix2vox
+from car_detection.models import build_yolo
+from car_detection.utils.utils import to_cpu, nms_with_rot
+from car_detection.pix2vox import pix2vox
+from roadmap_segmentation.pix2vox import pix2vox_seg
+import os
 # import your model class
 # import ...
 
@@ -19,7 +21,9 @@ def get_transform():
     transform = transforms.Compose([transforms.Resize((416, 416)),
                                     transforms.ToTensor()])
     return transform
-
+def create_dir(dir):
+    if not os.path.exists(dir):
+        os.mkdir(dir)
 
 class ModelLoader():
     # Fill the information for your team
@@ -28,12 +32,21 @@ class ModelLoader():
     team_member = ['Bofei Zhang', 'Cui Can', 'Yuanxi Sun']
     contact_email = 'bz1030@nyu.edu'
 
-    def __init__(self, detection_model='./model_weights/best-model-yolo.pth',
-                 segmentation_model='./model_weights/best-model-pix2vox.pth'):
-        self.model_detection = Darknet('./car_detection/config/yolov3.cfg', 416)
-        self.model_segmentation = pix2vox()
+    def __init__(self, detection_model='/scratch/bz1030/data_ds_1008/detection/car_detection/runs/p2v_yolo_2020-04-30_11-53-15_det_pt/best-model-3.pth',
+                 segmentation_model='/scratch/bz1030/data_ds_1008/detection/model_weights/best-model-pix2vox.pth'):
+        self.model_detection = pix2vox(seg=False, det=True)
+        self.model_segmentation = pix2vox_seg()
+        self.yolo = build_yolo()
         self.use_cuda = torch.cuda.is_available()
         self.device = torch.device('cuda' if self.use_cuda else 'cpu')
+        self.debug_det = detection_model.split('/')[:-1]
+        self.debug_det = '/'.join(self.debug_det)
+        #self.debug_det += '/debug_det'
+        self.debug_seg = segmentation_model.split('/')[:-1]
+        self.debug_seg = '/'.join(self.debug_seg)
+        #self.debug_seg += '/debug_seg'
+        create_dir(self.debug_det)
+        create_dir(self.debug_seg)
         if self.use_cuda:
             state_dict1 = torch.load(detection_model)
             state_dict2 = torch.load(segmentation_model)
@@ -57,32 +70,16 @@ class ModelLoader():
             samples = torch.stack(samples).to(self.device)
         else:
             samples = samples.to(self.device)
-        yolo = self.model_detection.yolo_layers
         with torch.no_grad():
-            outputs = {0: None, 1: None, 2: None}
-            for image_idx in range(6):
-                image = samples[:, image_idx].squeeze(dim=1)
-                yolo_output = self.model_detection(image)
-
-                for output_idx in range(3):
-                    if outputs[output_idx] is None:
-                        outputs[output_idx] = yolo_output[output_idx]
-                    else:
-                        outputs[output_idx] = torch.cat((outputs[output_idx],
-                                                         yolo_output[output_idx]),
-                                                        dim=1)
+            road_outputs, yolo_outputs = self.model_detection(samples)
             # compute loss
-            loss = 0
-            detections = []
-            for output_idx in range(3):
-                output = outputs[output_idx]
-                output = self.model_detection.module_list[-3 + output_idx](output)
-                output, layer_loss, metrics = yolo[output_idx](output, None, 416)
-                detections.append(output)
-                loss += layer_loss
-            detections = to_cpu(torch.cat(detections, 1))
-            #print('average/max conf:', detections[:, :, 6].mean().item(), detections[:, :, 6].max().item())
-            detections = nms_with_rot(detections, 0.7, 0)
+            output, yolo_loss, metrics = self.yolo(yolo_outputs, None, 416)
+
+        # detections = to_cpu(torch.cat(output, 1))
+        detections = output.cpu()
+        #print('average/max conf:', detections[:, :, 6].mean().item(), detections[:, :, 6].max().item())
+        threshold = detections[:, :, 6].max().item() * 0.75 # dynamics cut-off
+        detections = nms_with_rot(detections, threshold, 0)
         return torch.stack(detections)
 
     def get_binary_road_map(self, samples):
@@ -93,7 +90,6 @@ class ModelLoader():
         # samples is a cuda tensor with size [batch_size, 6, 3, 256, 306]
         # You need to return a cuda tensor with size [batch_size, 800, 800]
         with torch.no_grad():
-            outputs = self.model_segmentation(samples).squeeze(dim=1)
-            # compute loss
-            prob = torch.sigmoid(outputs)
+            road_outputs = self.model_segmentation(samples)
+            prob = torch.sigmoid(road_outputs)
         return prob > 0.5

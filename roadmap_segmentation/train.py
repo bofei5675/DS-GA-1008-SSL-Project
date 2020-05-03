@@ -20,7 +20,7 @@ from torch.autograd import Variable
 import torch.optim as optim
 from helper import collate_fn, draw_box, collate_fn2
 import torchsummary
-from pix2vox import pix2vox
+from pix2vox import pix2vox_seg
 
 def weights_init_normal(m):
     classname = m.__class__.__name__
@@ -47,7 +47,7 @@ def setup(args = None):
     if args.model == 'unet':
         model = UNet(3, 1).to(device)
     elif args.model == 'pix2vox':
-        model = pix2vox(args.pre_train).to(device)
+        model = pix2vox_seg(args.pre_train).to(device)
     transform = transforms.Compose([transforms.Resize((416, 416)),
                                     transforms.ToTensor()])
 
@@ -148,7 +148,7 @@ def train_unet(model, optimizer, trainloader, valloader, args):
                         outputs = torch.cat(outputs, dim=1)
                         outputs = model.mapping(outputs).squeeze(dim=1)
                     elif args.model == 'pix2vox':
-                        outputs = model(sample).squeeze(dim=1)
+                        outputs = model(sample)#.squeeze(dim=1)
                     # compute loss
                     loss = criterion(outputs, target)
                     prob = torch.sigmoid(outputs)

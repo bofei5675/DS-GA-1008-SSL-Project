@@ -73,8 +73,7 @@ def compute_ats_bounding_boxes(boxes1, boxes2):
             #print(iou_matrix[i][j])
 
     iou_max = iou_matrix.max(dim=0)[0]
-    #iou_thresholds = [0.5, 0.6, 0.7, 0.8, 0.9]
-    iou_thresholds = [0.3]
+    iou_thresholds = [0.5, 0.6, 0.7, 0.8, 0.9]
     total_threat_score = 0
     total_weight = 0
     for threshold in iou_thresholds:

@@ -293,7 +293,7 @@ def train_yolov3_pass_6(model, optimizer, trainloader, valloader, args):
                         #print(metrics)
                         output = '{}/{}:' \
                               .format(idx + 1, num_batch)
-                        output += ';'.join(['{}: {:4.2f}'.format(key, value/(idx + 1)/3) for key, value in metrics_epoch.items()])
+                        output += ';'.join(['{}: {:4.3f}'.format(key, value/(idx + 1)/3) for key, value in metrics_epoch.items()])
                         print(output)
                         write_to_log(output, save_dir)
                     if phase == 'val' and idx + 1 == num_batch:
@@ -326,7 +326,25 @@ def build_model_dir(args):
         print(f'New directory {model_name} created')
     return model_name
 
-
+def get_metrics_holder(args):
+    if args.seg:
+        metrics = {
+            "loss": 0,
+            'road_map_acc': 0
+        }
+    elif args.det:
+        metrics = {
+            "loss": 0,
+            "x": 0,
+            "y": 0,
+            "w": 0,
+            "h": 0,
+            "conf": 0,
+            'conf_obj': 0,
+            'conf_noobj': 0,
+            'rotation': 0,
+        }
+    return metrics
 def train_pix2vox_yolo(model, optimizer, trainloader, valloader, args):
     model_name = build_model_dir(args)
     save_dir = os.path.join('./runs', model_name)
@@ -346,18 +364,7 @@ def train_pix2vox_yolo(model, optimizer, trainloader, valloader, args):
             total_loss = 0
             num_batch = len(dataloader[phase])
             bar = tqdm(total=num_batch, desc='Processing', ncols=90)
-            metrics_epoch = {
-                "loss": 0,
-                "x":0,
-                "y":0,
-                "w":0,
-                "h":0,
-                "conf": 0,
-                'conf_obj':0,
-                'conf_noobj':0,
-                'rotation':0,
-                'road_map_acc': 0
-            }
+            metrics_epoch = get_metrics_holder(args)
             if phase == 'train':
                 model.train()
             else:
@@ -385,13 +392,13 @@ def train_pix2vox_yolo(model, optimizer, trainloader, valloader, args):
                     else:
                         road_image_acc = 0
                         lane_map_loss = torch.tensor(0, device=device)
-
-                    for key in metrics_epoch:
-                        if key != 'road_map_acc' and key in metrics:
-                            metrics_epoch[key] += metrics[key]
-                        else:
-                            metrics_epoch[key] += road_image_acc
                     loss = yolo_loss + lane_map_loss
+                    iteration_stats = {'loss': loss.item(), 'road_map_acc': road_image_acc}
+                    for key in metrics_epoch:
+                        if key not in ['road_map_acc', 'loss'] and key in metrics:
+                            metrics_epoch[key] += metrics[key]
+                        elif key in ['road_map_acc', 'loss']:
+                            metrics_epoch[key] += iteration_stats[key]
                     if args.demo:
                         output = '{}/{}:' \
                             .format(idx + 1, num_batch)

@@ -295,9 +295,9 @@ class Mapper(torch.nn.Module):
         return x
 
 
-class pix2vox(torch.nn.Module):
+class pix2vox_seg(torch.nn.Module):
     def __init__(self, pretrained=True):
-        super(pix2vox, self).__init__()
+        super(pix2vox_seg, self).__init__()
         self.cfg = None
         self.encoder = Encoder(self.cfg, pretrained=pretrained)
         self.decoder = Decoder(self.cfg)
@@ -313,6 +313,7 @@ class pix2vox(torch.nn.Module):
         merger_volumns = self.merger(raw_features, gen_volumes)
         refiner_columns = self.refiner(merger_volumns)
         outputs = self.mapper(refiner_columns)
+        outputs = outputs.squeeze(dim=1)
         return outputs
 
     def init_weights(m):
