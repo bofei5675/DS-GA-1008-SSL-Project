@@ -248,6 +248,69 @@ class YOLOLayer(nn.Module):
 
             return output, loss, metrics
 
+class CenterNetLoss(nn.Module):
+    """Detection layer"""
+
+    def __init__(self, obj_scale=10, nonobj_scale=1, regr_weights=1):
+        super(CenterNetLoss, self).__init__()
+        self.output_dim = 800
+        self.obj_scale = obj_scale
+        self.noobj_scale = nonobj_scale
+        self.regr_weights = regr_weights
+
+    def forward(self, prediction, targets=None):
+        '''
+
+        :param x: [batch_size, 5, 800, 800]
+            0) prob of location 1) width 2) height 3) rot1 4) rot2
+        :param targets:  [batch_size, 800, 800, 6]
+            0) prob of location 1) width 2) height 3) rot1 4) rot2 5) mask
+        :return:
+        '''
+        prob = torch.sigmoid(prediction[:, 0]).unsqueeze(dim=1)  # Center x
+        w = torch.exp(prediction[:, 1]).unsqueeze(dim=1)  # Width
+        h = torch.exp(prediction[:, 2]).unsqueeze(dim=1) # Height
+        pred_rotation = torch.tanh(prediction[:, 3: ])# pred rotation
+        xdir = pred_rotation[:, 0].unsqueeze(dim=1)
+        ydir = pred_rotation[:, 1].unsqueeze(dim=1)
+        # Add offset and scale with anchors
+        output = torch.cat(
+            (prob,
+             w,
+             h,
+             xdir,
+             ydir
+             ),
+            dim=1
+        )  # batch x 5 x 800 x 800
+        if targets is None:
+
+            return output, 0, {}
+        else:
+            loss, metrics = center_net_loss(prob,  w, h, xdir, ydir, targets,
+                                            self.obj_scale, self.noobj_scale, self.regr_weights)
+
+            return output, loss, metrics
+
+def center_net_loss(prob, w, h, xdir, ydir, targets, obj_scale, noobj_scale, regr_weights):
+    mask = targets[:, -1, :, :].unsqueeze(dim=1)
+    heatmap = targets[:, 0, :, :].unsqueeze(dim=1)
+    # clf loss
+    clf_loss =  focal_loss_cn(prob, heatmap, mask, alpha=2, beta=4, pos_weights=obj_scale, neg_weights=noobj_scale)
+    # regr loss
+    # w
+    # Regression L1 loss
+    pred_regr = torch.cat((w, h, xdir,ydir), dim=1)
+    regr = targets[:, 1:5, :, :]
+    regr_loss = (torch.abs(pred_regr - regr).sum(1) * mask.squeeze(dim=1)).sum(dim=1).sum(dim=1) /  mask.squeeze(dim=1).sum(1).sum(1)
+    regr_loss = regr_loss.mean(0)
+    loss = clf_loss + regr_weights * regr_loss
+    metric = {'clf_loss': clf_loss.item(), 'regr_loss': regr_loss.item(),
+              'loss':loss.item(), 'pos_conf': (prob[mask == 1].mean()).item(),'neg_conf': (prob[mask == 0].mean().item())}
+    print(metric)
+    return loss, metric
+
+
 
 def bce_loss(pred_conf, tconf, weights=(1,1),reduction='mean'):
     loss = weights[1] * tconf * -torch.log(pred_conf + 1e-8) +  weights[0] * (1 - tconf) * -torch.log(1-pred_conf + 1e-8)
@@ -255,6 +318,19 @@ def bce_loss(pred_conf, tconf, weights=(1,1),reduction='mean'):
     if reduction == 'mean':
         return loss.mean()
     return loss.sum()
+
+def focal_loss_cn(pred, true, mask, alpha, beta, pos_weights=1, neg_weights=1):
+    pred, true, mask = pred.squeeze(dim=1), true.squeeze(dim=1), mask.squeeze(dim=1)
+    focal_weights = torch.where(torch.eq(mask, 1), torch.pow(1. - pred, alpha),
+                                torch.pow(pred, alpha) * torch.pow(1 - true, beta))
+    # normalize the weigts such that it sums to 1.
+    #print(focal_weights.mean(dim=(1, 2)), focal_weights.sum(dim=(1, 2)))
+    focal_weights = focal_weights #/ focal_weights.sum(dim=(1, 2)).unsqueeze(dim=1).unsqueeze(dim=2)
+    bce = - pos_weights * (mask * torch.log(pred + 1e-12) + neg_weights * (1 - mask) * torch.log(1 - pred + 1e-12))
+    loss = focal_weights * bce
+    loss = loss.mean(dim=(1, 2)).mean() # average focal loss for each sample
+    # print('bce', bce.mean(0).sum().data, 'fl', loss.data)
+    return loss
 
 def focal_loss(pred_conf, tconf, weights=(1,1), alpha=2, reduction='mean'):
     focal_weights = [(pred_conf) ** alpha, (1 - pred_conf) ** alpha]

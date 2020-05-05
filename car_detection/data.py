@@ -9,7 +9,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
 
-from helper import convert_map_to_lane_map, convert_map_to_road_map
+from helper import convert_map_to_lane_map, convert_map_to_road_map, gaussian_kernel
 
 NUM_SAMPLE_PER_SCENE = 126
 NUM_IMAGE_PER_SAMPLE = 6
@@ -180,6 +180,114 @@ class LabeledDataset(torch.utils.data.Dataset):
             direction = direction / np.linalg.norm(direction)
             labels[idx, 6:] = direction
         return labels
+
+# The dataset class for labeled data.
+class LabeledDatasetCenterNet(torch.utils.data.Dataset):
+    def __init__(self, image_folder, annotation_file, scene_index, transform, extra_info=True):
+        """
+        Args:
+            image_folder (string): the location of the image folder
+            annotation_file (string): the location of the annotations
+            scene_index (list): a list of scene indices for the unlabeled data
+            transform (Transform): The function to process the image
+            extra_info (Boolean): whether you want the extra information
+        """
+
+        self.image_folder = image_folder
+        self.annotation_dataframe = pd.read_csv(annotation_file)
+        self.scene_index = scene_index
+        self.transform = transform
+        self.extra_info = extra_info
+
+    def __len__(self):
+        return self.scene_index.size * NUM_SAMPLE_PER_SCENE
+
+    def __getitem__(self, index):
+        scene_id = self.scene_index[index // NUM_SAMPLE_PER_SCENE]
+        sample_id = index % NUM_SAMPLE_PER_SCENE
+        sample_path = os.path.join(self.image_folder, f'scene_{scene_id}', f'sample_{sample_id}')
+        images = []
+        for image_name in image_names:
+            image_path = os.path.join(sample_path, image_name)
+            image = Image.open(image_path)
+            image = self.transform(image)
+            image = image.unsqueeze(0)
+            images.append(image)
+        image_tensor = torch.cat(images, dim=0)
+        data_entries = self.annotation_dataframe[
+            (self.annotation_dataframe['scene'] == scene_id) & (
+                    self.annotation_dataframe['sample'] == sample_id)]
+        corners = data_entries[['fl_x', 'fr_x', 'bl_x', 'br_x', 'fl_y', 'fr_y', 'bl_y', 'br_y']] \
+            .to_numpy().reshape(-1, 2, 4)
+        labels = self.build_labels(corners)
+
+        ego_path = os.path.join(sample_path, 'ego.png')
+        ego_image = Image.open(ego_path)
+        ego_image = torchvision.transforms.functional.to_tensor(ego_image)
+        road_image = convert_map_to_road_map(ego_image)
+        # column order: category, x, y, width, height; Plan to transpose the label
+        # reserve first column for idx of each instance.
+        labels = torch.as_tensor(labels)
+
+        # build lane map label
+        road_image_temp = torch.zeros(road_image.shape)
+        road_image_temp[road_image] = 1
+        road_image = road_image_temp
+        if self.extra_info:
+            actions = data_entries.action_id.to_numpy()
+            # You can change the binary_lane to False to get a lane with
+            lane_image = convert_map_to_lane_map(ego_image, binary_lane=True)
+
+            extra = {}
+            extra['action'] = torch.as_tensor(actions)
+            extra['ego_image'] = ego_image
+            extra['lane_image'] = lane_image
+            extra['file_path'] = sample_path
+            extra['scene_id'] = scene_id
+            extra['sample_id'] = sample_id
+            return image_tensor, labels, road_image, extra
+
+        else:
+            return image_tensor, labels, road_image
+
+
+    def build_labels(self, corners, label_dim=800):
+        '''
+
+        :param corners:
+        :param label_dim:
+        :return: heatmap
+        800x800xoutput_size: 0) location 1) width 2)height 3) rot1 4) rot2 5) mask
+        '''
+        heatmap = np.zeros((6, label_dim, label_dim))
+        for idx, corner in enumerate(corners):
+            point_squence = np.stack([corner[:, 0], corner[:, 1], corner[:, 3], corner[:, 2], corner[:, 0]])
+            x = point_squence.T[0] * 10 + 400
+            y = - point_squence.T[1] * 10 + 400
+            xc = int((x.min().item() + x.max().item()) / 2)
+            yc = int((y.min().item() + y.max().item()) / 2)
+            w = np.abs(x.min().item() - x.max().item())
+            h = np.abs(y.min().item() - y.max().item())
+            # build directions
+            # compute angle
+            vector1 = np.array([x[0], y[0]])
+            vector2 = np.array([x[1], y[1]])
+            cxy = np.array([xc, yc])
+            direction = (vector1 - cxy) + (vector2 - cxy)
+            direction = direction / np.linalg.norm(direction)
+            heatmap[1, xc, yc] = w
+            heatmap[2, xc, yc] = h
+            heatmap[3, xc, yc] = direction[0]
+            heatmap[4, xc, yc] = direction[1]
+            heatmap[5, xc, yc] = 1
+            heatmap[0, :, :] = np.maximum(gaussian_kernel(label_dim,
+                                                       xc,
+                                                       yc,
+                                                       w / 2,
+                                                       h / 2, direction),
+                                       heatmap[0, :, :])
+
+        return heatmap
 
 # The dataset class for labeled data.
 class LabeledDatasetLarge(torch.utils.data.Dataset):

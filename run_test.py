@@ -14,7 +14,7 @@ import  matplotlib.pyplot as plt
 from data_helper import LabeledDataset
 from helper import compute_ats_bounding_boxes, compute_ts_road_map, draw_box, draw_box_no_scale
 
-from model_loader import get_transform, ModelLoader
+from model_loader import get_transform, ModelLoader, ModelLoader2
 from tqdm import tqdm
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
@@ -51,8 +51,7 @@ dataloader = torch.utils.data.DataLoader(
     )
 bar = tqdm(total=len(dataloader), desc='Processing', ncols=90)
 
-model_loader = ModelLoader(detection_model=opt.det_model,
-                           segmentation_model=opt.seg_model)
+model_loader = ModelLoader2()
 
 total = 0
 total_ats_bounding_boxes = 0
@@ -62,7 +61,8 @@ bar = tqdm(total=len(dataloader), desc='Processing', ncols=90)
 for i, data in enumerate(dataloader):
     total += 1
     sample, target, road_image, extra = data
-    sample = sample.cuda()
+    if torch.cuda.is_available():
+        sample = sample.cuda()
     #print(sample.shape)
     # only works for batch size = 1 ?
     predicted_bounding_boxes = model_loader.get_bounding_boxes(sample)[0].cpu()

@@ -284,16 +284,38 @@ class Mapper(torch.nn.Module):
                 torch.nn.ReLU(),
 
                 torch.nn.Conv2d(4, 1, kernel_size=1, padding=0),
-                torch.nn.BatchNorm2d(1),
-                torch.nn.ReLU(0.2)
             )
         if self.det:
-            self.yolo_branch = torch.nn.Sequential(
-                torch.nn.Conv2d(32, 128, kernel_size=9, padding=1),
-                torch.nn.BatchNorm2d(128),
-                torch.nn.ReLU(0.2),
-                torch.nn.ConvTranspose2d(128, 21, kernel_size=4, stride=2, bias=True, padding=1),
-            )
+            if cfg is None or cfg.model_config == 'pix2vox':
+                self.yolo_branch = torch.nn.Sequential(
+                    torch.nn.Conv2d(32, 128, kernel_size=9, padding=1),
+                    torch.nn.BatchNorm2d(128),
+                    torch.nn.ReLU(),
+                    torch.nn.Upsample(scale_factor=2),
+                    torch.nn.Conv2d(128, 21, kernel_size=3, padding=1),
+                )
+            elif cfg.model_config == 'center_net':
+                self.yolo_branch = torch.nn.Sequential(
+                    torch.nn.Conv2d(32, 8, kernel_size=9, padding=1),
+                    torch.nn.BatchNorm2d(8),
+                    torch.nn.ReLU(0.2),
+                    torch.nn.ConvTranspose2d(8, 8, kernel_size=4, stride=4, bias=True, padding=1),
+                    torch.nn.BatchNorm2d(8),
+                    torch.nn.ReLU(),
+
+                    torch.nn.ConvTranspose2d(8, 8, kernel_size=2, stride=2, bias=True, padding=1),
+                    torch.nn.BatchNorm2d(8),
+                    torch.nn.ReLU(),
+
+                    torch.nn.ConvTranspose2d(8, 8, kernel_size=2, stride=2, bias=True, padding=1),
+                    torch.nn.BatchNorm2d(8),
+                    torch.nn.ReLU(),
+
+                    torch.nn.ConvTranspose2d(8, 8, kernel_size=2, stride=2, bias=True, padding=2),
+                    torch.nn.BatchNorm2d(8),
+                    torch.nn.ReLU(),
+                    torch.nn.Conv2d(8, 5, kernel_size=1, padding=0),
+                )
 
     def forward(self, volumes):
         if self.seg:
@@ -309,9 +331,9 @@ class Mapper(torch.nn.Module):
 
 
 class pix2vox(torch.nn.Module):
-    def __init__(self, pretrained=True, det=True, seg=True):
+    def __init__(self, cfg, pretrained=True, det=True, seg=True):
         super(pix2vox, self).__init__()
-        self.cfg = None
+        self.cfg = cfg
         self.det = det
         self.seg = seg
         self.encoder = Encoder(self.cfg, pretrained=pretrained)
