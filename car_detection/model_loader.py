@@ -20,6 +20,16 @@ def get_transform():
                                     transforms.ToTensor()])
     return transform
 
+def get_transform_task1():
+    transform = transforms.Compose([transforms.Resize((416, 416)),
+                                    transforms.ToTensor()])
+    return transform
+
+def get_transform_task2():
+    transform = transforms.Compose([transforms.Resize((416, 416)),
+                                    transforms.ToTensor()])
+    return transform
+
 
 class ModelLoader():
     # Fill the information for your team

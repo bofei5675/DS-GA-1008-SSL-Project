@@ -27,6 +27,12 @@ parser.add_argument('-det', '--detection', dest='det',
                     type=str2bool, default='yes')
 parser.add_argument('-seg', '--segmentation', dest='seg',
                     type=str2bool, default='yes')
+parser.add_argument('-ssl', '--ssl', dest='ssl',
+                    type=str2bool, default='no')
+parser.add_argument('-a', '--alpha', dest='alpha',
+                    type=float, default=2)
+parser.add_argument('-g', '--gamma', dest='gamma',
+                    type=float, default=1)
 
 args = parser.parse_args()
 

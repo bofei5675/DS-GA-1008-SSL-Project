@@ -10,12 +10,13 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
-import  matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 from data_helper import LabeledDataset
 from helper import compute_ats_bounding_boxes, compute_ts_road_map, draw_box, draw_box_no_scale
 
 from model_loader import get_transform, ModelLoader, ModelLoader2
 from tqdm import tqdm
+
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 
@@ -42,16 +43,16 @@ labeled_trainset = LabeledDataset(
     scene_index=labeled_scene_index,
     transform=get_transform(),
     extra_info=True
-    )
+)
 dataloader = torch.utils.data.DataLoader(
     labeled_trainset,
     batch_size=1,
     shuffle=False,
     num_workers=4
-    )
+)
 bar = tqdm(total=len(dataloader), desc='Processing', ncols=90)
 
-model_loader = ModelLoader(opt.det_model, opt.seg_model)
+model_loader = ModelLoader2()
 
 total = 0
 total_ats_bounding_boxes = 0
@@ -63,7 +64,7 @@ for i, data in enumerate(dataloader):
     sample, target, road_image, extra = data
     if torch.cuda.is_available():
         sample = sample.cuda()
-    #print(sample.shape)
+    # print(sample.shape)
     # only works for batch size = 1 ?
     predicted_bounding_boxes = model_loader.get_bounding_boxes(sample)[0].cpu()
     predicted_road_map = model_loader.get_binary_road_map(sample).cpu()
@@ -96,7 +97,8 @@ for i, data in enumerate(dataloader):
         ax.set_ylim(0, 800)
         ax.set_title('blue=Target; orange=Prediction')
         plt.savefig(
-            '{}/debug_det/{}_{}.png'.format(model_loader.debug_det, extra['scene_id'].item(), extra['sample_id'].item()))
+            '{}/debug_det/{}_{}.png'.format(model_loader.debug_det, extra['scene_id'].item(),
+                                            extra['sample_id'].item()))
         plt.close()
 
         # draw lanemap
@@ -109,18 +111,20 @@ for i, data in enumerate(dataloader):
         ax[1].set_title('Pred Score:{}'.format(ts_road_map))
         plt.tight_layout()
         plt.savefig(
-            '{}/debug_seg/{}_{}.png'.format(model_loader.debug_seg,extra['scene_id'].item(), extra['sample_id'].item()))
+            '{}/debug_seg/{}_{}.png'.format(model_loader.debug_seg, extra['scene_id'].item(),
+                                            extra['sample_id'].item()))
         plt.close()
 
-print(f'{model_loader.team_name} - {model_loader.round_number} - Bounding Box Score: {total_ats_bounding_boxes / total:.4} - Road Map Score: {total_ts_road_map / total:.4}')
-    
-avg_det_score =  total_ats_bounding_boxes / total
+print(
+    f'{model_loader.team_name} - {model_loader.round_number} - Bounding Box Score: {total_ats_bounding_boxes / total:.4} - Road Map Score: {total_ts_road_map / total:.4}')
+
+avg_det_score = total_ats_bounding_boxes / total
 avg_seg_score = total_ts_road_map / total
 
-with open(model_loader.debug_det +'/eval.txt', 'w') as f:
+with open(model_loader.debug_det + '/eval.txt', 'w') as f:
     f.write('Detection threat score: {}'.format(avg_det_score))
 
-with open(model_loader.debug_seg +'/eval.txt', 'w') as f:
+with open(model_loader.debug_seg + '/eval.txt', 'w') as f:
     f.write('Detection threat score: {}'.format(avg_seg_score))
 
 

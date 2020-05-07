@@ -7,7 +7,7 @@ from utils.parse_config import *
 from data import UnlabeledDataset, LabeledDataset, LabeledDatasetCenterNet, LabeledDatasetLarge
 from terminaltables import AsciiTable
 from tqdm import tqdm
-
+from load_ssl import ssl_loader
 import os
 import sys
 import time
@@ -104,13 +104,17 @@ def setup(args = None):
                                                 num_workers=2,
                                                 collate_fn=collate_fn2)
     elif args.model_config == 'pix2vox':
-        transform = transforms.Compose([transforms.Resize((416, 416)),
-                                        transforms.ToTensor()])
+        train_transform = transforms.Compose([transforms.Resize((416, 416)),
+                                              transforms.ColorJitter(brightness=0.5, contrast=0.5, saturation=0.5,
+                                                                     hue=0.5),
+                                              transforms.ToTensor()])
+        val_transform = transforms.Compose([transforms.Resize((416, 416)),
+                                              transforms.ToTensor()])
 
         labeled_trainset = LabeledDataset(image_folder=image_folder,
                                           annotation_file=annotation_csv,
                                           scene_index=labeled_scene_index_train,
-                                          transform=transform,
+                                          transform=train_transform,
                                           extra_info=True
                                           )
 
@@ -123,7 +127,7 @@ def setup(args = None):
         labeled_valset = LabeledDataset(image_folder=image_folder,
                                         annotation_file=annotation_csv,
                                         scene_index=labeled_scene_index_val,
-                                        transform=transform,
+                                        transform=val_transform,
                                         extra_info=True
                                         )
 
@@ -132,15 +136,23 @@ def setup(args = None):
                                                 shuffle=True,
                                                 num_workers=2,
                                                 collate_fn=collate_fn2)
-        model = pix2vox(args, args.pre_train, args.det, args.seg).to(device)
+        if not args.ssl:
+            model = pix2vox(args, args.pre_train, args.det, args.seg).to(device)
+        else:
+            model = ssl_loader(args)
     elif args.model_config == 'center_net':
-        transform = transforms.Compose([transforms.Resize((416, 416)),
-                                        transforms.ToTensor()])
+        train_transform = transforms.Compose([transforms.Resize((416, 416)),
+                                              transforms.ColorJitter(brightness=0.5, contrast=0.5, saturation=0.5,
+                                                                     hue=0.5),
+                                              transforms.ToTensor()])
+        val_transform = transforms.Compose([transforms.Resize((416, 416)),
+                                            transforms.ToTensor()])
+
 
         labeled_trainset = LabeledDatasetCenterNet(image_folder=image_folder,
                                                annotation_file=annotation_csv,
                                                scene_index=labeled_scene_index_train,
-                                               transform=transform,
+                                               transform=train_transform,
                                                extra_info=True
                                                )
 
@@ -153,7 +165,7 @@ def setup(args = None):
         labeled_valset = LabeledDatasetCenterNet(image_folder=image_folder,
                                              annotation_file=annotation_csv,
                                              scene_index=labeled_scene_index_val,
-                                             transform=transform,
+                                             transform=val_transform,
                                              extra_info=True
                                              )
 
@@ -162,8 +174,11 @@ def setup(args = None):
                                                 shuffle=True,
                                                 num_workers=2,
                                                 collate_fn=collate_fn_cn)
-        model = pix2vox(args, args.pre_train, args.det, args.seg).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+        if not args.ssl:
+            model = pix2vox(args, args.pre_train, False, True).to(device)
+        else:
+            model = ssl_loader(args)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-4)
     return model, optimizer, trainloader, valloader
 
 
@@ -349,6 +364,7 @@ def build_model_dir(args):
     model_name += '_det' if args.det else ''
     model_name += '_seg' if args.seg else ''
     model_name += '_pt' if args.pre_train else ''
+    model_name += '_ssl' if args.ssl else ''
     model_name = 'p2v_yolo' + '_' + model_name if args.model_config == 'pix2vox' else model_name
     model_name = 'center_net' + '_' + model_name if args.model_config == 'center_net' else 'yolov3'  + '_' + model_name
 
@@ -397,7 +413,7 @@ def train_pix2vox_yolo(model, optimizer, trainloader, valloader, args):
     model_file.close()
     model.train()
     dataloader = {'train': trainloader, 'val': valloader}
-    best_loss = [1e+6]
+    best_metrics = {'loss':1e+6, 'road_map_acc':0, 'road_ts':0}
     yolo_criterion = build_yolo()
     lanemap_criterion = torch.nn.BCEWithLogitsLoss()
     f = open(save_dir + '/log.txt', 'a+')
@@ -432,96 +448,13 @@ def train_pix2vox_yolo(model, optimizer, trainloader, valloader, args):
                         lane_map_mask = (lane_map_pred > 0.5).detach().cpu().numpy()
                         road_image = road_image.cpu().numpy()
                         road_image_acc = (lane_map_mask == road_image).sum() / (args.batch_size * 800 * 800)
-                    else:
-                        road_image_acc = 0
-                        lane_map_loss = torch.tensor(0, device=device)
-                    loss = yolo_loss + lane_map_loss
-                    iteration_stats = {'loss': loss.item(), 'road_map_acc': road_image_acc}
-                    for key in metrics_epoch:
-                        if key not in ['road_map_acc', 'loss'] and key in metrics:
-                            metrics_epoch[key] += metrics[key]
-                        elif key in ['road_map_acc', 'loss']:
-                            metrics_epoch[key] += iteration_stats[key]
-
-                    if args.demo:
-                        output = '{}/{}:' \
-                            .format(idx + 1, num_batch)
-                        output += ';'.join(
-                            ['{}: {:4.2f}'.format(key, value / (idx + 1)) for key, value in metrics_epoch.items()])
-                        print(output)
-
-                    if phase == 'train':
-                        optimizer.zero_grad()
-                        loss.backward()
-                        optimizer.step()
-                    total_loss += loss.item()
-                    bar.update(1)
-                    if idx % 100 == 0 and phase == 'train':
-                        #print(metrics)
-                        output = '{}/{}:' \
-                              .format(idx + 1, num_batch)
-                        output += ';'.join(['{}: {:4.2f}'.format(key, value/(idx + 1)) for key, value in metrics_epoch.items()])
-                        print(output)
-                        write_to_log(output, save_dir)
-                    if phase == 'val' and idx + 1 == num_batch:
-                        #print(metrics)
-                        output = 'Epoch {}:' \
-                            .format(e)
-                        output += ';'.join(
-                            ['{}: {:4.2f}'.format(key, value / num_batch) for key, value in metrics_epoch.items()])
-                        print(output)
-                        loss_epoch = metrics_epoch['loss'] / num_batch
-                        write_to_log(output, save_dir)
-                        if np.min(best_loss) > loss_epoch:
-                            torch.save(model.state_dict(), save_dir + '/best-model-{}.pth'.format(e))
-                        best_loss.append(loss_epoch)
-    f.close()
-
-
-def train_center_net(model, optimizer, trainloader, valloader, args):
-    model_name = build_model_dir(args)
-    save_dir = os.path.join('./runs', model_name)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model.train()
-    dataloader = {'train': trainloader, 'val': valloader}
-    best_metrics = {'loss':[1e+6], 'road_map_acc':[0], 'road_ts':[0]}
-    centernet_criterion = CenterNetLoss()
-    lanemap_criterion = torch.nn.BCEWithLogitsLoss()
-    f = open(save_dir + '/log.txt', 'a+')
-    for e in range(30):
-        for phase in ['train', 'val']:
-            print('Stage', phase)
-            total_loss = 0
-            num_batch = len(dataloader[phase])
-            bar = tqdm(total=num_batch, desc='Processing', ncols=90)
-            metrics_epoch = get_metrics_holder(args)
-            if phase == 'train':
-                model.train()
-            else:
-                model.eval()
-            for idx, (sample, target, road_image, extra) in enumerate(dataloader[phase]):
-                sample = sample.to(device)
-                target = target.to(device).float()
-                road_image = road_image.to(device)
-
-                with torch.set_grad_enabled(phase == 'train'):
-                    road_outputs, yolo_outputs  = model(sample)
-                    # compute loss
-                    if args.det:
-                        output, yolo_loss, metrics = centernet_criterion(yolo_outputs, target)
-                    else:
-                        output, yolo_loss, metrics = None, torch.tensor(0, device=device), {}
-                    if args.seg:
-                        lane_map_loss = lanemap_criterion(road_outputs, road_image)
-                        lane_map_pred = torch.sigmoid(road_outputs)
-                        lane_map_mask = (lane_map_pred > 0.5).detach().cpu().numpy()
-                        road_image = road_image.cpu().numpy()
-                        road_image_acc = (lane_map_mask == road_image).sum() / (args.batch_size * 800 * 800)
                         road_image_ts_score = compute_ts_road_map(lane_map_mask, road_image)
+
                     else:
                         road_image_acc = 0
                         lane_map_loss = torch.tensor(0, device=device)
                         road_image_ts_score = 0
+
 
                     loss = yolo_loss + lane_map_loss
                     iteration_stats = {'loss': loss.item(), 'road_map_acc': road_image_acc,
@@ -531,6 +464,7 @@ def train_center_net(model, optimizer, trainloader, valloader, args):
                             metrics_epoch[key] += metrics[key]
                         elif key in ['road_map_acc', 'loss', 'road_ts']:
                             metrics_epoch[key] += iteration_stats[key]
+
                     if args.demo:
                         output = '{}/{}:' \
                             .format(idx + 1, num_batch)
@@ -558,23 +492,108 @@ def train_center_net(model, optimizer, trainloader, valloader, args):
                         output += ';'.join(
                             ['{}: {:4.2f}'.format(key, value / num_batch) for key, value in metrics_epoch.items()])
                         print(output)
-                        loss_epoch = metrics_epoch['loss'] / num_batch
+                        for key in metrics_epoch:
+                            metrics_epoch[key] = metrics_epoch[key] / num_batch
+                        write_to_log(output, save_dir)
+                        best_metrics = save_model(model.state_dict(), save_dir + '/best-model-{}.pth'.format(e),
+                                                  metrics_epoch, best_metrics, args)
+    f.close()
+
+
+def train_center_net(model, optimizer, trainloader, valloader, args):
+    model_name = build_model_dir(args)
+    save_dir = os.path.join('./runs', model_name)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.train()
+    dataloader = {'train': trainloader, 'val': valloader}
+    best_metrics = {'loss':1e+6, 'road_map_acc':0, 'road_ts':0}
+    centernet_criterion = CenterNetLoss()
+    criterion = torch.nn.BCEWithLogitsLoss()
+    f = open(save_dir + '/log.txt', 'a+')
+    for e in range(30):
+        for phase in ['train', 'val']:
+            print('Stage', phase)
+            total_loss = 0
+            num_batch = len(dataloader[phase])
+            bar = tqdm(total=num_batch, desc='Processing', ncols=90)
+            metrics_epoch = {'loss':0, 'car_ts':0,  'car_acc':0, 'pos_loss': 0, 'neg_loss': 0}
+            if phase == 'train':
+                model.train()
+            else:
+                model.eval()
+            for idx, (sample, target, road_image, extra) in enumerate(dataloader[phase]):
+                sample = sample.to(device)
+                target = target.to(device).float().squeeze(dim=1)
+                with torch.set_grad_enabled(phase == 'train'):
+                    yolo_outputs, _  = model(sample)
+                    # compute loss
+                    #print('outputs', yolo_outputs.mean().item(), yolo_outputs.max().item(), yolo_outputs.min().item())
+                    prob = torch.sigmoid(yolo_outputs)#.detach().cpu().numpy()
+                    # print('prob', prob.mean().item(), prob.max().item(), prob.min().item())
+                    target_mask = target.cpu().numpy()
+                    #print('target', target_mask.mean(), target_mask.max(), target_mask.min())
+
+                    pred = prob.detach().cpu().numpy() > 0.5
+                    target_mask = target_mask > 0.5
+                    #yolo_loss = criterion(yolo_outputs, target)
+                    mask = (target == 1).float()
+                    yolo_loss, pos_loss, neg_loss = focal_loss_cn(prob, target, mask, alpha=args.alpha,
+                                              beta=4,
+                                              pos_weights=args.gamma, neg_weights=1)
+                    loss = yolo_loss  # + lane_map_loss
+                    car_acc = (target_mask  == pred).sum() / (args.batch_size * 800 * 800)
+                    iteration_stats = {'loss': loss.item(),
+                                       'car_ts': compute_ts_road_map(target_mask, pred),
+                                       'car_acc': car_acc,
+                                       'pos_loss': pos_loss,
+                                       'neg_loss': neg_loss}
+                    for key in metrics_epoch:
+                        metrics_epoch[key] += iteration_stats[key]
+                    if args.demo:
+                        output = '{}/{}:' \
+                            .format(idx + 1, num_batch)
+                        output += ';'.join(
+                            ['{}: {:4.4f}'.format(key, value / (idx + 1)) for key, value in metrics_epoch.items()])
+                        print(output)
+
+                    if phase == 'train':
+                        optimizer.zero_grad()
+                        loss.backward()
+                        optimizer.step()
+                    total_loss += loss.item()
+                    bar.update(1)
+                    if idx % 100 == 0 and phase == 'train':
+                        #print(metrics)
+                        output = '{}/{}:' \
+                              .format(idx + 1, num_batch)
+                        output += ';'.join(['{}: {:4.4f}'.format(key, value/(idx + 1)) for key, value in metrics_epoch.items()])
+                        print(output)
+                        write_to_log(output, save_dir)
+                    if phase == 'val' and idx + 1 == num_batch:
+                        #print(metrics)
+                        output = 'Epoch {}:' \
+                            .format(e)
+                        output += ';'.join(
+                            ['{}: {:4.4f}'.format(key, value / num_batch) for key, value in metrics_epoch.items()])
+                        print(output)
+                        for key in metrics_epoch:
+                            metrics_epoch[key] = metrics_epoch[key] / num_batch
                         write_to_log(output, save_dir)
                         save_model(model.state_dict(), save_dir + '/best-model-{}.pth'.format(e), metrics_epoch, best_metrics, args)
-                        best_loss.append(loss_epoch)
     f.close()
 
 def save_model(model, path, metrics_epoch, best_metrics, args):
     if args.det or (args.det and args.seg):
         if metrics_epoch['loss'] < best_metrics['loss']:
-            torch.save(model.state_dict(),
+            torch.save(model,
                     path)
             best_metrics['loss'] = metrics_epoch['loss']
     elif args.seg:
         if metrics_epoch['road_ts'] > best_metrics['road_ts']:
-            torch.save(model.state_dict(),
+            torch.save(model,
                     path)
             best_metrics['road_ts'] = metrics_epoch['road_ts']
+    return best_metrics
 
 
 def write_to_log(text, save_dir):
@@ -584,6 +603,7 @@ def write_to_log(text, save_dir):
 
 def compute_ts_road_map(road_map1, road_map2):
     tp = (road_map1 * road_map2).sum()
-
+    print(road_map1.sum(), road_map2.sum())
+    print(tp,'/', road_map1.sum() + road_map2.sum() - tp)
     return tp * 1.0 / (road_map1.sum() + road_map2.sum() - tp)
 

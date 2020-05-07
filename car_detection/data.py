@@ -259,7 +259,7 @@ class LabeledDatasetCenterNet(torch.utils.data.Dataset):
         :return: heatmap
         800x800xoutput_size: 0) location 1) width 2)height 3) rot1 4) rot2 5) mask
         '''
-        heatmap = np.zeros((6, label_dim, label_dim))
+        heatmap = np.zeros((1, label_dim, label_dim))
         for idx, corner in enumerate(corners):
             point_squence = np.stack([corner[:, 0], corner[:, 1], corner[:, 3], corner[:, 2], corner[:, 0]])
             x = point_squence.T[0] * 10 + 400
@@ -275,18 +275,19 @@ class LabeledDatasetCenterNet(torch.utils.data.Dataset):
             cxy = np.array([xc, yc])
             direction = (vector1 - cxy) + (vector2 - cxy)
             direction = direction / np.linalg.norm(direction)
-            heatmap[1, xc, yc] = w
-            heatmap[2, xc, yc] = h
-            heatmap[3, xc, yc] = direction[0]
-            heatmap[4, xc, yc] = direction[1]
-            heatmap[5, xc, yc] = 1
+            #heatmap[1, xc, yc] = w
+            #heatmap[2, xc, yc] = h
+            #heatmap[3, xc, yc] = direction[0]
+            #heatmap[4, xc, yc] = direction[1]
+            #heatmap[5, xc, yc] = 1
             heatmap[0, :, :] = np.maximum(gaussian_kernel(label_dim,
                                                        xc,
                                                        yc,
                                                        w / 2,
                                                        h / 2, direction),
                                        heatmap[0, :, :])
-
+        heatmap[0] = heatmap[0].T
+        heatmap[heatmap > 0.2] = 1
         return heatmap
 
 # The dataset class for labeled data.
