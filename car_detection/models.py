@@ -1,5 +1,6 @@
 from __future__ import division
-
+import sys
+sys.path.append('./car_detection')
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -324,13 +325,15 @@ def focal_loss_cn(pred, true, mask, alpha, beta, pos_weights=1, neg_weights=1):
     focal_weights = torch.where(torch.eq(mask, 1), torch.pow(1. - pred, alpha),
                                 torch.pow(pred, alpha) * torch.pow(1 - true, beta))
     # normalize the weigts such that it sums to 1.
-    #print(focal_weights.mean(dim=(1, 2)), focal_weights.sum(dim=(1, 2)))
-    focal_weights = focal_weights #/ focal_weights.sum(dim=(1, 2)).unsqueeze(dim=1).unsqueeze(dim=2)
-    bce = - pos_weights * (mask * torch.log(pred + 1e-12) + neg_weights * (1 - mask) * torch.log(1 - pred + 1e-12))
-    loss = focal_weights * bce
+    pos_weights = (1 - mask).sum().item() / mask.sum().item()
+    pos_loss = - focal_weights * pos_weights * mask * torch.log(pred + 1e-12)
+    neg_loss = - focal_weights * neg_weights * (1 - mask) * torch.log(1 - pred + 1e-12)
+    # print(mask.sum().item(), (1 - mask).sum().item())
+    loss =  pos_loss +  neg_loss
+    pos_loss = pos_loss.sum() / mask.sum()
+    neg_loss = neg_loss.sum() / (1 - mask).sum()
     loss = loss.mean(dim=(1, 2)).mean() # average focal loss for each sample
-    # print('bce', bce.mean(0).sum().data, 'fl', loss.data)
-    return loss
+    return loss, pos_loss.item(), neg_loss.item()
 
 def focal_loss(pred_conf, tconf, weights=(1,1), alpha=2, reduction='mean'):
     focal_weights = [(pred_conf) ** alpha, (1 - pred_conf) ** alpha]

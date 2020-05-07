@@ -12,6 +12,39 @@ import matplotlib.patches as patches
 from shapely.geometry import Polygon
 
 
+def extract_coords(prediction, threshold=0.5):
+    logits = prediction[0]
+    print('threshold:', threshold)
+    regr_output = prediction[1:]
+    points = np.argwhere(logits > threshold)
+    print('filtered:', points.shape)
+    plt.imshow(logits)
+    plt.savefig('./test.png')
+    plt.close()
+    col_names = ['w', 'h', 'rot_x', 'rot_y']
+    coords = []
+    for r, c in points:
+        regr_dict = dict(zip(col_names, regr_output[:, r, c]))
+        regr_dict['x'] = r
+        regr_dict['y'] = c
+        regr_dict['confidence'] = logits[r, c]
+        coords.append(regr_dict)
+    coords = clear_duplicates(coords)
+    print('Length:', len(coords))
+    return coords
+
+DISTANCE_THRESH_CLEAR = 10
+def clear_duplicates(coords):
+    for c1 in coords:
+        xy1 = np.array([c1['x'], c1['y']])
+        for c2 in coords:
+            xy2 = np.array([c2['x'], c2['y']])
+            distance = np.sqrt(((xy1 - xy2) ** 2).sum())
+            if distance < DISTANCE_THRESH_CLEAR:
+                if c1['confidence'] < c2['confidence']:
+                    c1['confidence'] = -1
+    return [c for c in coords if c['confidence'] > 0]
+
 def to_cpu(tensor):
     return tensor.detach().cpu()
 
@@ -300,7 +333,24 @@ def rectangle_np(center, vector, xr, yr):
 
     return a, b, c, d
 
+def xywhrot2corners_cn(predictions):
+    '''
 
+    :param predictions:
+    :return:
+    '''
+    corners = []
+    for pred in predictions:
+        xc, yc, w, h, rot_x, rot_y = pred['x'], pred['x'], pred['x'], pred['x']
+        # prediction was normalize to the image size not output size
+        # here change it to the scale of dimension 800
+        xc, yc, w, h = xc * scale, yc * scale, w * scale, h * scale
+        center = np.array([xc, yc])
+        direction = np.array([rot_x, rot_y])
+        cor1, cor2, cor3, cor4 = rectangle_np(center, direction, h, w)
+        corner = np.stack([cor1, cor2, cor3, cor4]).T
+        corners.append(corner)
+    return np.stack(corners)
 def xywhrot2corners(predictions):
     '''
 
@@ -339,9 +389,6 @@ def nms_with_rot(prediction, conf_thres=0.5, nms_thres=0.4, extra=None):
         extra = [None for _ in range(len(prediction))]
     for image_i, (image_pred, meta_info) in enumerate(zip(prediction, extra)):
         # Filter out confidence scores below threshold
-        #print('Score range: {}-{};  mean:{}'.format(image_pred[:, 6].min(),
-         #                                           image_pred[:, 6].max(),
-         #                                           image_pred[:, 6].mean()))
         image_pred = image_pred[image_pred[:, 6] >= conf_thres]
         # If none are remaining => process next image
         if image_pred.shape[0] <= 0:
@@ -390,7 +437,7 @@ def nms_with_rot(prediction, conf_thres=0.5, nms_thres=0.4, extra=None):
             plt.close()
         bbox = bbox[keep_boxes]
         output[image_i] = torch.tensor(bbox)
-        print('NMS change number of box from {} to {}'.format(num_boxes, bbox.shape[0]))
+        # print('NMS change number of box from {} to {}'.format(num_boxes, bbox.shape[0]))
     return output
 
 

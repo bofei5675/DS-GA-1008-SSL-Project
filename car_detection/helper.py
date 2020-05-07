@@ -10,8 +10,8 @@ def gaussian_kernel(inp_size, xc, yc, w, h, direction):
     center = np.array([xc, yc])
     direction_perp = np.array([-direction[1], direction[0]])
     u = np.stack([direction, direction_perp]).T
-    radius1 = max(w,h) / 3
-    radius2 = min(w,h) / 3
+    radius1 = max(w,h) / 2
+    radius2 = min(w,h) / 2
     s = np.diag([ radius1 ** 2, radius2 ** 2])
     cov = u.dot(s).dot(u.T)
     cov_inv = np.linalg.inv(cov)

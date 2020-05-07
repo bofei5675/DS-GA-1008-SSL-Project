@@ -30,7 +30,7 @@ class Encoder(torch.nn.Module):
         # Don't update params in ResNet
         if not self.pretrained:
             for param in resnet50.parameters():
-                param.requires_grad = False
+                param.requires_grad = True # not freezing
 
     def forward(self, rendering_images):
         # print(rendering_images.size())  # torch.Size([batch_size, n_views, img_c, img_h, img_w])
@@ -298,22 +298,22 @@ class Mapper(torch.nn.Module):
                 self.yolo_branch = torch.nn.Sequential(
                     torch.nn.Conv2d(32, 8, kernel_size=9, padding=1),
                     torch.nn.BatchNorm2d(8),
-                    torch.nn.ReLU(0.2),
+                    torch.nn.LeakyReLU(0.2),
                     torch.nn.ConvTranspose2d(8, 8, kernel_size=4, stride=4, bias=True, padding=1),
                     torch.nn.BatchNorm2d(8),
-                    torch.nn.ReLU(),
+                    torch.nn.LeakyReLU(0.2),
 
                     torch.nn.ConvTranspose2d(8, 8, kernel_size=2, stride=2, bias=True, padding=1),
                     torch.nn.BatchNorm2d(8),
-                    torch.nn.ReLU(),
+                    torch.nn.LeakyReLU(),
 
                     torch.nn.ConvTranspose2d(8, 8, kernel_size=2, stride=2, bias=True, padding=1),
                     torch.nn.BatchNorm2d(8),
-                    torch.nn.ReLU(),
+                    torch.nn.LeakyReLU(0.2),
 
                     torch.nn.ConvTranspose2d(8, 8, kernel_size=2, stride=2, bias=True, padding=2),
                     torch.nn.BatchNorm2d(8),
-                    torch.nn.ReLU(),
+                    torch.nn.LeakyReLU(0.2),
                     torch.nn.Conv2d(8, 5, kernel_size=1, padding=0),
                 )
 
