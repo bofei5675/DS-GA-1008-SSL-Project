@@ -1,4 +1,4 @@
-# Bird’s-eye View Prediction: Contrastive Predictive Coding pre-train Pio2Voxwith YOLOv3
+# Bird’s-eye View Prediction: Contrastive Predictive Coding pre-train Pio2Vox with YOLOv3
 Code for DS-GA-1008 Self-Supervised Learning(SSL) Final Project for Bofei Zhang, Can Cui, Yuanxi Sun
 
 Rank (out of 50 teams): 
