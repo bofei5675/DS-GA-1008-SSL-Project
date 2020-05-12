@@ -18,7 +18,7 @@ Command:
 
 ## Step 2. Fine Tune or train from scratch
 
-Folder `./car_detection` contains all code train a Pix2Vox model for detection/segmentation task. To run training, you will need to run `main.py` with following command line arguments
+Folder `./car_detection` contains all code train a Pix2Vox model for detection/segmentation task. To run this on your own environment, please first configure `./car_detection/data.py` for the dataloader. To run training, you will need to run `main.py` with following command line arguments:
 * `-mc`, `--model-conifg`, setup the model configuration. The best model uses configuration `pix2vox`
 * `-bs`, `--batch-size`, batch size of training
 * `-dm`, yes or no, if yes, it only adds one scene into train/validation set, which is good for debugging
