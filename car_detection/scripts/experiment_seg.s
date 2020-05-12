@@ -8,4 +8,4 @@
 module purge
 source /scratch/bz1030/capstone_env/bin/activate
 cd ..
-python main.py -mc pix2vox -bs 2 -pt yes -det no -seg yes -ssl no
+python main.py -mc pix2vox -bs 2 -pt no -det no -seg yes -ssl no

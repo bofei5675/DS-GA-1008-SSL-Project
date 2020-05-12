@@ -178,7 +178,7 @@ def setup(args = None):
             model = pix2vox(args, args.pre_train, False, True).to(device)
         else:
             model = ssl_loader(args)
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-4)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4, weight_decay=1e-4)
     return model, optimizer, trainloader, valloader
 
 

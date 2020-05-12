@@ -8,7 +8,7 @@ from self_supervised.config import Args
 
 class DockSLL():
 
-    def __init__(self, ssl_model_addr='../model_weights/best-model-cpc-3e-05.pth', args=None):
+    def __init__(self, ssl_model_addr='../model_weights/best-model-cpc-3e-05-update-update.pth', args=None):
 
         self.use_cuda = torch.cuda.is_available()
         self.device = torch.device('cuda' if self.use_cuda else 'cpu')
