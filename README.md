@@ -12,9 +12,20 @@ Rank (out of 50 teams):
 
 In this step we utilized unlabelled data and CPC to pretrian a ResNet-50 encoder. 
 Command:
+folder `./self_supervised/config.py` contains configurations of the model, when adjusted and simply run
 ```
+python ./self_supervised/run.py
+```
+Important details about `config.py`:
 
-```
+* `resnet_model`, the encoder model of feature extractor, by default `resnet50` and lists are {`resnet18`, `resnet50`. `resnet101`, `resnet152`}
+* `encoder_model`, the encoder model of seq2seq, by default `LSTM`, and lists are {`LSTM`, `GRU`, `RNN`}
+* `embed_size`, the embedding size of feature extractor
+* `rnn_hidden_size`, the hidden size of seq2seq
+* `output_size`, the output size of the seq2seq
+* `rnn_n_layers`, the number of layers of seq2seq (both encoder and decoder)
+* `rnn_seq_len`, the sequence length of seq2seq
+    
 
 ## Step 2. Fine Tune or train from scratch
 
