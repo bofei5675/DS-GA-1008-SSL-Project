@@ -29,11 +29,11 @@ Folder `./car_detection` contains all code train a Pix2Vox model for detection/s
 
 To run the training, simply do 
 ```bash
-# segmentation model
+# segmentation model from scratch
 python main.py -mc pix2vox -bs 2 -pt no -det no -seg yes -ssl no
 
-# detection model
-python main.py -mc pix2vox -bs 2 -pt no -det no -seg yes -ssl no
+# detection model from scratch
+python main.py -mc pix2vox -bs 2 -pt no -det yes -seg no -ssl no
 ```
 After training, you can use `detect_pix.py` for the testing and figure generation.
 
